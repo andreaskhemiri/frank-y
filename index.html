@@ -1160,7 +1160,7 @@ function speak(text){
     if (!text || !/[\p{L}\p{N}]/u.test(text) || !('speechSynthesis' in window)){ res(); return; }   // bara skiljetecken → säg inget
     const arabic = /[\u0600-\u06FF]/.test(text);
     const arVoice = arabic ? speechSynthesis.getVoices().find(v => /^ar/i.test(v.lang)) : null;
-    if (arabic && !arVoice){ status('Farfars röst svarar inte – kolla att hjärnan är version 13', 6000); res(); return; }
+    if (arabic && !arVoice){ status('Farfars röst svarar inte – kolla att hjärnan är version 14', 6000); res(); return; }
     let finished = false, started = false;
     const done = () => { if (finished) return; finished = true; speaking = false; res(); };
     const go = () => {
@@ -1953,7 +1953,7 @@ async function speakParts(delar){
 micBtn.addEventListener('click', e => { e.stopPropagation(); listen(); });
 
 // ---------- Inställningar för hjärnan i ⚙-menyn ----------
-const APP_VERSION = 13;   // syns längst ner i ⚙-menyn – så vet du att telefonen har senaste koden
+const APP_VERSION = 14;   // syns längst ner i ⚙-menyn – så vet du att telefonen har senaste koden
 panel.appendChild(Object.assign(document.createElement('div'), {className:'sep'}));
 function mkInput(ph, val, type, onChange){
   const i = document.createElement('input');
