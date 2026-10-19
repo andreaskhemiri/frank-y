@@ -353,10 +353,12 @@ function render(t, now){
   const age = (now - changeAt) / 1000;
   const sq = Math.exp(-age * 6) * Math.sin(age * 20) * .1;          // studs vid nytt uttryck
   const prox = face.visible ? 1 + clamp((face.size - .3) * .4, 0, .15) : 1; // nära = större ögon
+  const ll = rState ? clamp(rState.level * 8, 0, 1) : 0;                    // ögonen "hör" din röst
+  if (rState) micBtn.style.transform = `translateX(-50%) scale(${(1.12 + ll * .35).toFixed(3)})`;
   const tv = voiceLevel >= 0 ? voiceLevel : .5 + .5 * (Math.sin(t*13) * .6 + Math.sin(t*7.7) * .4);
   const T = Math.max(cur.talk, talkAmt);
   const talkH = 1 - T * .14 * tv;
-  const sx = (1 + sq) * breathe * prox, sy = (1 - sq) * breathe * prox * talkH;
+  const sx = (1 + sq) * breathe * prox * (1 + ll * .07), sy = (1 - sq) * breathe * prox * talkH * (1 + ll * .07);
   const bounceY = Math.sin(t * 3.2) * cur.bounce * bh * .06 - T * tv * bh * .03;
   const ox = g.x * bw * .85, oy = g.y * bh * .55;
   const gap = bw * .85;
@@ -649,12 +651,97 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 // ---------- Lyssna (tal till text) ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-function listen(){
+let activeRec = null;
+// Släpp mikrofonen när appen läggs i bakgrunden
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden'){
+    if (activeRec){ try { activeRec.abort(); } catch(_){} }
+    if (rState){ stopMic(); listening = false; micBtn.classList.remove('on'); setEmotion('neutral'); }
+  }
+});
+// ---------- Egen inspelning: Frank-Y styr mikrofonen själv ----------
+// Mikrofonen är bara på medan du pratar och stängs av med kod efteråt.
+let rState = null;
+function rmsOf(d){ let s = 0; for (let i = 0; i < d.length; i++) s += d[i]*d[i]; return Math.sqrt(s / d.length); }
+async function startRecording(){
+  const a = audio();
+  const stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
+  const src = a.createMediaStreamSource(stream);
+  const proc = a.createScriptProcessor(4096, 1, 1);
+  const mute = a.createGain(); mute.gain.value = 0;
+  src.connect(proc); proc.connect(mute).connect(a.destination);
+  const st = rState = {stream, src, proc, mute, chunks: [], rate: a.sampleRate, t0: performance.now(),
+                       noise: 0, n: 0, heard: false, lastVoice: 0, level: 0};
+  proc.onaudioprocess = e => {
+    if (rState !== st) return;
+    const d = new Float32Array(e.inputBuffer.getChannelData(0));
+    st.chunks.push(d);
+    const rms = rmsOf(d), now = performance.now(), t = now - st.t0;
+    st.level = rms;
+    if (t < 350){ st.noise = (st.noise * st.n + rms) / (++st.n); return; }   // mät bakgrundsljud
+    const thr = Math.max(.012, st.noise * 2.5);
+    if (rms > thr){ st.heard = true; st.lastVoice = now; }
+    if (st.heard && now - st.lastVoice > 1300) finishRecording();           // tyst en stund = klar
+    else if (!st.heard && t > 6000) finishRecording();                      // ingen sa något
+    else if (t > 12000) finishRecording();                                  // max 12 sekunder
+  };
+}
+function stopMic(){
+  const st = rState; rState = null;
+  if (!st) return null;
+  try { st.proc.onaudioprocess = null; st.src.disconnect(); st.proc.disconnect(); st.mute.disconnect(); } catch(_){}
+  st.stream.getTracks().forEach(t => t.stop());       // här släpps mikrofonen – pricken släcks
+  if (camOn && video.paused) video.play().catch(() => {});
+  return st;
+}
+function toWav16k(chunks, rate){
+  let len = 0; for (const c of chunks) len += c.length;
+  const all = new Float32Array(len); let o = 0; for (const c of chunks){ all.set(c, o); o += c.length; }
+  const ratio = rate / 16000, outLen = Math.floor(len / ratio);
+  const buf = new ArrayBuffer(44 + outLen * 2), v = new DataView(buf);
+  const w = (p, s) => { for (let i = 0; i < s.length; i++) v.setUint8(p + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + outLen * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, outLen * 2, true);
+  for (let i = 0; i < outLen; i++){
+    const a0 = Math.floor(i * ratio), a1 = Math.min(len, Math.floor((i + 1) * ratio));
+    let s = 0; for (let j = a0; j < a1; j++) s += all[j]; s /= Math.max(1, a1 - a0);
+    v.setInt16(44 + i * 2, clamp(s, -1, 1) * 0x7fff, true);
+  }
+  const bytes = new Uint8Array(buf); let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function finishRecording(){
+  const st = stopMic();
+  listening = false; micBtn.classList.remove('on'); micBtn.style.transform = '';
+  if (!st) return;
+  if (!st.heard){ sound('klar'); setEmotion('neutral'); status('Jag hörde inget – prova igen', 4000); return; }
+  sound('klar');
+  think('', toWav16k(st.chunks, st.rate));
+}
+async function listen(){
+  if (busy) return;
+  if (rState){ finishRecording(); return; }           // tryck igen = klar
+  if (listening) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return listenBrowser();
+  if (!serverUrl || !password){ status('Fyll i server-adress och lösenord under ⚙'); panel.classList.add('open'); return; }
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  listening = true; lastActivity = performance.now();
+  micBtn.classList.add('on'); setEmotion('lyssnar');
+  try { await startRecording(); sound('lyssnar'); }
+  catch(e){
+    listening = false; micBtn.classList.remove('on'); setEmotion('neutral');
+    status('Frank-Y får inte använda mikrofonen – tillåt den i Safari', 8000);
+  }
+}
+// Reserv: Safaris inbyggda taligenkänning (om inspelning inte stöds)
+function listenBrowser(){
   if (busy || listening) return;
-  // Mikrofonen måste startas direkt i tryckningen, annars vägrar iPhone
   if (!SR){ status('Taligenkänning saknas här – skriv istället'); askText(); return; }
   if ('speechSynthesis' in window) speechSynthesis.cancel();
-  const rec = new SR();
+  const rec = new SR(); activeRec = rec;
   rec.lang = 'sv-SE'; rec.interimResults = false; rec.maxAlternatives = 1; rec.continuous = false;
   let got = false;
   let heard = '';
@@ -664,7 +751,12 @@ function listen(){
     else if (e.error === 'no-speech') status('Jag hörde inget – prova igen', 4000);
     else if (e.error !== 'aborted') status('Mikrofonfel: ' + e.error, 6000);
   };
+  // Sluta lyssna automatiskt efter 10 sekunder
+  const maxTimer = setTimeout(() => { try { rec.abort(); } catch(_){} }, 10000);
   rec.onend = () => {
+    clearTimeout(maxTimer);
+    try { rec.abort(); } catch(_){}          // släpp mikrofonen helt
+    activeRec = null;
     listening = false; micBtn.classList.remove('on');
     // Vänta tills iPhone släppt mikrofonen helt – annars blir rösten tyst
     if (got){ setTimeout(() => think(heard), 600); return; }
@@ -681,25 +773,34 @@ function askText(){
 }
 
 // ---------- Tänk (fråga hjärnan) ----------
-async function think(text){
+async function think(text, ljud){
   text = String(text || '').trim();
-  if (!text || busy) return;
+  if ((!text && !ljud) || busy) return;
   if (!serverUrl || !password){ status('Fyll i server-adress och lösenord under ⚙'); panel.classList.add('open'); return; }
   busy = true; micBtn.classList.add('busy'); lastActivity = performance.now();
   setEmotion('tänker'); sound('tänker');
-  history.push({role: 'user', content: text});
+  if (text) history.push({role: 'user', content: text});
   let svar;
   try {
-    const res = await callBrain({messages: history.slice(-12)});
+    const res = await callBrain(ljud ? {messages: history.slice(-12), ljud} : {messages: history.slice(-12)});
     svar = res.data;
     if (!res.ok) throw new Error((svar.fel || ('fel ' + res.status)) + (svar.detalj ? ' – ' + svar.detalj : ''));
   } catch(e){
-    history.pop();
+    if (text) history.pop();
     busy = false; micBtn.classList.remove('busy');
     setEmotion('neutral'); play([['ledsen', 2500]]); sound('fel');
     status('Hjärnan svarar inte: ' + e.message, 9000);
     return;
   }
+  if (ljud){
+    if (!svar['hörde']){
+      busy = false; micBtn.classList.remove('busy');
+      setEmotion('neutral'); play([['förvånad', 1200]]); status('Jag uppfattade inte vad du sa – prova igen', 5000);
+      return;
+    }
+    history.push({role: 'user', content: svar['hörde']});
+  }
+  const ljudSvar = svar.ljud; delete svar.ljud; delete svar['hörde'];
   history.push({role: 'assistant', content: JSON.stringify(svar)});
   if (history.length > 20) history = history.slice(-20);
 
@@ -707,8 +808,8 @@ async function think(text){
   setEmotion(k); sound(k);
   await new Promise(r => setTimeout(r, 400));
   let played = false;
-  if (svar.ljud){
-    try { await playRobotVoice(svar.ljud); played = true; }
+  if (ljudSvar){
+    try { await playRobotVoice(ljudSvar); played = true; }
     catch(e){ status('Robotrösten krånglade – använder iPhone-rösten', 5000); }
   } else if (svar['röstfel']) status('Azure-röst: ' + svar['röstfel'], 8000);
   if (!played) await speak(svar['säg']);
