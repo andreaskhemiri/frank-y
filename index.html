@@ -47,7 +47,8 @@
 // lid = övre ögonlock (0-1), tilt = lutning (+ arg, - ledsen),
 // bot = undre lock, smile = glad båge underifrån, heart = hjärtöga
 const E = o => Object.assign({w:1,h:1,r:.38,y:0,lid:0,tilt:0,bot:0,smile:0,heart:0}, o||{});
-const G = {color:[90,220,255], blush:0, roll:0, bounce:0, gx:0, gy:0, talk:0, speed:8};
+// jiggle = skakskratt, shiver = darrar, sway = vaggar, spin = ögonen går runt
+const G = {color:[90,220,255], blush:0, roll:0, bounce:0, gx:0, gy:0, talk:0, speed:8, jiggle:0, shiver:0, sway:0, spin:0};
 
 const EXPR = {
   neutral:  {L:{}},
@@ -61,6 +62,17 @@ const EXPR = {
   tänker:   {L:{lid:.22,tilt:-.15}, R:{lid:.12,h:.95}, gx:.55, gy:-.55, color:[120,200,255]},
   lyssnar:  {L:{w:1.05,h:1.08,r:.45}, roll:6, color:[100,240,225]},
   pratar:   {L:{smile:.2}, color:[100,230,255], talk:1},
+  // ---- fler uttryck ----
+  blunda:   {L:{lid:1}, color:[90,220,255], speed:6},
+  skrattar: {L:{h:.9,smile:.72}, color:[120,240,255], blush:.6, bounce:.6, jiggle:1, speed:12},
+  blinka:   {L:{h:.95,smile:.2}, R:{h:.85,smile:.9}, color:[110,235,255], blush:.35, roll:-5},
+  rädd:     {L:{w:.85,h:1.12,r:.5}, color:[175,210,255], shiver:1, gy:.1, speed:14},
+  förvirrad:{L:{h:1.1}, R:{h:.8,lid:.3,tilt:-.3}, color:[160,200,255], roll:10, sway:1},
+  blyg:     {L:{h:.85,lid:.15,smile:.25}, color:[140,215,255], blush:1, gx:.5, gy:.45, roll:8, speed:5},
+  stolt:    {L:{h:.95,lid:.35,tilt:-.05,smile:.3}, color:[120,240,220], gy:-.25, roll:-4},
+  uttråkad: {L:{h:.95,lid:.5}, color:[110,170,200], gx:-.5, gy:.1, speed:4},
+  yr:       {L:{}, color:[200,200,255], spin:1, sway:.6, speed:6},
+  busig:    {L:{lid:.22,tilt:.12,smile:.45}, R:{lid:.05,smile:.45}, color:[150,255,200], roll:6, gx:.3},
 };
 for (const n in EXPR) {
   const e = EXPR[n];
@@ -69,7 +81,10 @@ for (const n in EXPR) {
 // AI:n kan svara på engelska eller utan å/ä/ö – det funkar ändå
 const ALIAS = {happy:'glad',joy:'glad',sad:'ledsen',surprised:'förvånad',forvanad:'förvånad',angry:'arg',
   sleepy:'sömnig',tired:'sömnig',somnig:'sömnig',love:'kär',kar:'kär',curious:'nyfiken',
-  thinking:'tänker',tanker:'tänker',listening:'lyssnar',talking:'pratar',speaking:'pratar'};
+  thinking:'tänker',tanker:'tänker',listening:'lyssnar',talking:'pratar',speaking:'pratar',
+  blundar:'blunda',closed:'blunda',sleep:'blunda',skratta:'skrattar',laughing:'skrattar',laugh:'skrattar',
+  wink:'blinka',blinkar:'blinka',scared:'rädd',radd:'rädd',afraid:'rädd',confused:'förvirrad',forvirrad:'förvirrad',
+  shy:'blyg',proud:'stolt',bored:'uttråkad',uttrakad:'uttråkad',dizzy:'yr',mischievous:'busig',playful:'busig'};
 
 // ---------- Inställningar (sparas i telefonen) ----------
 const store = {
@@ -106,6 +121,7 @@ function norm(name){
 function apply(name){
   if (name !== emotion){ changeAt = performance.now(); if (Math.random()<.5) startBlink(); }
   emotion = name; target = EXPR[name]; updateButtons();
+  const mb = document.getElementById('mic'); if (mb) mb.style.opacity = name === 'blunda' ? '.12' : '';
 }
 // Spelar en sekvens av tillfälliga uttryck, återgår sedan till grunduttrycket
 function play(seq){
@@ -248,17 +264,18 @@ function onFaceAppear(now){
   lastActivity = now;
   if (!autoMode || tempActive) return;
   if (autoSlept && baseEmotion === 'sömnig'){ wake(); }
-  else if (baseEmotion === 'neutral' && away > 4000){ play([['glad', 1400]]); }
+  else if (baseEmotion === 'neutral' && away > 4000){ play([['glad', 1400]]); if (Math.random() < .6) sound('hej', {soft: true, extra: true}); }
 }
 function wake(){
   autoSlept = false; baseEmotion = 'neutral';
   play([['förvånad', 500], ['glad', 1600]]);
+  sound('förvånad', {extra: true}); setTimeout(() => sound('glad', {soft: true, extra: true}), 500);
 }
 function autoTick(now){
   if (!autoMode || tempActive) return;
   const idleLimit = camOn ? 40000 : 120000;   // somnar om ingen syns / rör den
   if (baseEmotion === 'neutral' && !face.visible && now - lastActivity > idleLimit){
-    baseEmotion = 'sömnig'; autoSlept = true; apply('sömnig');
+    baseEmotion = 'sömnig'; autoSlept = true; apply('sömnig'); sound('gäsp', {extra: true});
   }
 }
 
@@ -303,7 +320,7 @@ function drawEye(cx, cy, p, side, bw, bh, sx, sy, t){
     octx.fillStyle = '#000';
     // övre ögonlock med lutning
     if (p.lid > .005 || Math.abs(p.tilt) > .005){
-      const yMid = top + p.lid*h, dy = p.tilt * h * .4;
+      const yMid = top + p.lid*h*1.06, dy = p.tilt * h * .4;   // *1.06 = inga glipor när ögat är helt stängt
       const yAt = x => yMid + dy * (x * inner) / (w/2);
       octx.beginPath();
       octx.moveTo(-w, top - h); octx.lineTo(w, top - h);
@@ -359,13 +376,15 @@ function render(t, now){
   const T = Math.max(cur.talk, talkAmt);
   const talkH = 1 - T * .14 * tv;
   const sx = (1 + sq) * breathe * prox * (1 + ll * .07), sy = (1 - sq) * breathe * prox * talkH * (1 + ll * .07);
-  const bounceY = Math.sin(t * 3.2) * cur.bounce * bh * .06 - T * tv * bh * .03;
-  const ox = g.x * bw * .85, oy = g.y * bh * .55;
+  const bounceY = Math.sin(t * 3.2) * cur.bounce * bh * .06 - T * tv * bh * .03
+                + Math.abs(Math.sin(t * 13)) * cur.jiggle * bh * -.05;
+  const ox = g.x * bw * .85 + Math.sin(t * 38) * cur.shiver * bw * .025 + Math.cos(t * 6) * cur.spin * bw * .5;
+  const oy = g.y * bh * .55 + Math.sin(t * 6) * cur.spin * bh * .4;
   const gap = bw * .85;
 
   ctx.save();
   ctx.translate(W/2, H/2 + bounceY);
-  ctx.rotate((cur.roll + g.x * 5) * Math.PI / 180);   // lutar huvudet åt det håll den tittar
+  ctx.rotate((cur.roll + g.x * 5 + Math.sin(t * 2.2) * cur.sway * 8) * Math.PI / 180);   // lutar huvudet åt det håll den tittar
   // ögat åt det håll den tittar blir lite större (perspektiv)
   const pv = .14;
   drawEye(-gap + ox, oy, cur.L, -1, bw, bh, sx * (1 - g.x*pv), sy * (1 - g.x*pv*.6), t);
@@ -394,6 +413,7 @@ function frame(now){
   updateGaze(now, dt);
   updateBlink(now);
   autoTick(now);
+  idleTick(now);
   render(now / 1000, now);
   requestAnimationFrame(frame);
 }
@@ -406,14 +426,15 @@ cv.addEventListener('pointerdown', e => {
   const now = performance.now();
   lastActivity = now; keepAwake();
   lookAt((e.clientX / W - .5) * 2, (e.clientY / H - .5) * 2, 900);
-  if (busy || listening || speaking) return;   // stör inte mitt i ett samtal
+  if (busy || listening || speaking || talking) return;   // stör inte mitt i ett samtal
   taps = taps.filter(x => now - x < 2000); taps.push(now);
-  if (taps.length >= 6){ taps = []; play([['arg', 1800], ['ledsen', 1200]]); return; } // kittla inte för mycket!
+  if (taps.length >= 6){ taps = []; play([['arg', 1800], ['ledsen', 1200]]); sound('arg', {extra: true}); return; } // kittla inte för mycket!
   if (baseEmotion === 'sömnig'){ wake(); return; }
+  if (baseEmotion === 'blunda'){ setEmotion('neutral'); play([['förvånad', 400], ['glad', 1200]]); sound('förvånad', {soft: true, extra: true}); return; }
   const r = Math.random();
-  if (r < .45) play([['förvånad', 450], ['glad', 1400]]);
-  else if (r < .75) play([['glad', 1500]]);
-  else play([['kär', 1800]]);
+  if (r < .45){ play([['förvånad', 450], ['glad', 1400]]); sound('förvånad', {soft: true, extra: true}); }
+  else if (r < .75){ play([['glad', 1500]]); sound('glad', {soft: true, extra: true}); }
+  else { play([['kär', 1800]]); sound('kär', {soft: true, extra: true}); }
 });
 
 // ---------- Håll skärmen tänd ----------
@@ -479,13 +500,13 @@ function fixUrl(u){
 }
 let serverUrl = fixUrl(store.get('server', '')), password = String(store.get('pw', '')).trim();
 // Gemensam funktion för att prata med hjärnan, med begripliga felmeddelanden
-async function callBrain(body){
+async function callBrain(body, path = '', binary = false){
   let r, text;
   try {
-    r = await fetch(serverUrl, {
+    r = await fetch(serverUrl + path, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-Robot-Password': password},
-      body: JSON.stringify(body),
+      headers: {'Content-Type': binary ? 'audio/wav' : 'application/json', 'X-Robot-Password': password},
+      body: binary ? body : JSON.stringify(body),
     });
     text = await r.text();
   } catch(e){
@@ -498,7 +519,7 @@ async function callBrain(body){
   return {ok: r.ok, status: r.status, data};
 }
 let history = [];                         // samtalsminne (bara under sessionen)
-let speaking = false, talkAmt = 0, busy = false, listening = false;
+let speaking = false, talkAmt = 0, busy = false, listening = false, talking = false;
 const micBtn = document.getElementById('mic');
 
 // ---------- Robotljud (skapas i telefonen, inga ljudfiler) ----------
@@ -508,8 +529,10 @@ function audio(){
   if (ac && ac.state === 'suspended') ac.resume();
   return ac;
 }
+let pm = 1, vm = 1;   // slumpad tonhöjd/volym så att ljuden aldrig låter exakt likadant
 function tone(f1, f2, dur, delay = 0, type = 'sine', vol = .18){
   const a = audio(); if (!a) return;
+  f1 *= pm; f2 *= pm; vol *= vm;
   const t0 = a.currentTime + delay, o = a.createOscillator(), gn = a.createGain();
   o.type = type;
   o.frequency.setValueAtTime(f1, t0);
@@ -533,8 +556,44 @@ const SOUNDS = {
   lyssnar:  () => { tone(900,1400,.08); },
   klar:     () => { tone(1200,800,.07); },
   fel:      () => { tone(300,200,.35,0,'triangle',.12); },
+  hej:      () => { tone(600,900,.08); tone(900,1300,.08,.09); tone(1300,1000,.1,.19); },
+  fråga:    () => { tone(700,750,.07,0,'sine',.14); tone(800,1400,.15,.1,'sine',.14); },
+  klart:    () => { tone(1000,1200,.06,0,'sine',.12); tone(900,600,.09,.08,'sine',.12); },
+  gäsp:     () => { tone(500,700,.3,0,'triangle',.1); tone(700,250,.8,.3,'triangle',.1); },
+  snark:    () => { tone(140,110,.6,0,'sine',.08); },
+  fundera:  () => { tone(650,600,.12,0,'sine',.09); tone(560,720,.18,.15,'sine',.09); },
+  skrattar: () => { for (let i = 0; i < 5; i++) tone(900 + i*60, 1250 + i*60, .07, i*.11, 'sine', .14); },
+  blunda:   () => { tone(700,400,.35,0,'sine',.08); },
+  blinka:   () => { tone(1200,1800,.06,0,'sine',.12); tone(1800,1500,.08,.07,'sine',.1); },
+  rädd:     () => { for (let i = 0; i < 4; i++) tone(1300, 1100, .06, i*.08, 'triangle', .09); },
+  förvirrad:() => { tone(600,900,.12,0,'sine',.11); tone(900,500,.12,.13,'sine',.11); tone(500,800,.14,.27,'sine',.11); },
+  blyg:     () => { tone(800,1000,.1,0,'sine',.07); },
+  stolt:    () => { tone(520,520,.1,0,'triangle',.12); tone(660,660,.1,.12,'triangle',.12); tone(880,880,.22,.24,'triangle',.12); },
+  uttråkad: () => { tone(300,260,.5,0,'sine',.09); },
+  yr:       () => { for (let i = 0; i < 6; i++) tone(700 + Math.sin(i)*300, 700 + Math.cos(i)*300, .09, i*.09, 'sine', .1); },
+  busig:    () => { tone(900,1300,.07,0,'sine',.12); tone(1100,1500,.07,.12,'sine',.12); tone(1500,1100,.09,.24,'sine',.1); },
 };
-function sound(n){ try { (SOUNDS[n] || SOUNDS.neutral)(); } catch(e){} }
+let smaljud = store.get('sfx', true);   // kan stängas av i ⚙-menyn
+function sound(n, opts = {}){
+  if (opts.extra && !smaljud) return;
+  pm = rand(.88, 1.14); vm = opts.soft ? .55 : 1;
+  try { (SOUNDS[n] || SOUNDS.neutral)(); } catch(e){}
+  pm = 1; vm = 1;
+}
+// Spontana småljud då och då – sällan och aldrig mitt i ett samtal
+let nextIdle = performance.now() + rand(40000, 90000), lastTalk = 0;
+function idleTick(now){
+  if (!smaljud || busy || listening || speaking || talking || tempActive || rState) return;
+  if (now - lastTalk < 20000 || now < nextIdle) return;
+  nextIdle = now + rand(45000, 120000);
+  if (baseEmotion === 'sömnig'){ if (Math.random() < .5) sound('snark', {soft: true, extra: true}); return; }
+  if (baseEmotion !== 'neutral') return;
+  const r = Math.random();
+  if (r < .35){ lookAt(rand(-.8,.8), rand(-.4,.2), 1200); play([['nyfiken', 1300]]); sound('fråga', {soft: true, extra: true}); }
+  else if (r < .6 && face.visible){ play([['glad', 1200]]); sound('hej', {soft: true, extra: true}); }
+  else if (r < .8){ sound('fundera', {soft: true, extra: true}); }
+  // annars: tystnad – det är också en del av att kännas levande
+}
 
 // ---------- Röst (iPhonens egen svenska röst) ----------
 let svVoice = null;
@@ -591,11 +650,11 @@ function updateVoiceLevel(){
   const target = clamp(rms * 4, 0, 1);
   voiceLevel = voiceLevel < 0 ? target : voiceLevel + (target - voiceLevel) * .5;
 }
-async function playRobotVoice(b64){
+let currentSrc = null, interrupted = false;
+async function playRobotVoice(arrayBuf){
   const a = audio(); if (!a) throw new Error('inget ljud');
-  const bin = atob(b64), buf = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-  const audioBuf = await new Promise((ok, bad) => a.decodeAudioData(buf.buffer, ok, bad));
+  const audioBuf = await new Promise((ok, bad) => a.decodeAudioData(arrayBuf.slice(0), ok, bad));
+  if (interrupted) return;
   return new Promise(res => {
     const src = a.createBufferSource(); src.buffer = audioBuf; src.playbackRate.value = ROBOT_FX.speed;
     const out = a.createGain(); out.gain.value = 1.1;
@@ -618,8 +677,8 @@ async function playRobotVoice(b64){
     analyser = a.createAnalyser(); analyser.fftSize = 512; levelBuf = new Uint8Array(analyser.fftSize);
     out.connect(analyser);
     let fin = false;
-    const done = () => { if (fin) return; fin = true; speaking = false; try { osc.stop(); } catch(_){} res(); };
-    src.onended = done;
+    const done = () => { if (fin) return; fin = true; speaking = false; currentSrc = null; try { osc.stop(); } catch(_){} res(); };
+    src.onended = done; currentSrc = src;
     speaking = true; osc.start(); src.start();
     setTimeout(done, audioBuf.duration / ROBOT_FX.speed * 1000 + 1500);
   });
@@ -709,9 +768,7 @@ function toWav16k(chunks, rate){
     let s = 0; for (let j = a0; j < a1; j++) s += all[j]; s /= Math.max(1, a1 - a0);
     v.setInt16(44 + i * 2, clamp(s, -1, 1) * 0x7fff, true);
   }
-  const bytes = new Uint8Array(buf); let bin = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  return btoa(bin);
+  return buf;
 }
 function finishRecording(){
   const st = stopMic();
@@ -719,9 +776,33 @@ function finishRecording(){
   if (!st) return;
   if (!st.heard){ sound('klar'); setEmotion('neutral'); status('Jag hörde inget – prova igen', 4000); return; }
   sound('klar');
-  think('', toWav16k(st.chunks, st.rate));
+  hearThenThink(toWav16k(st.chunks, st.rate));
+}
+async function hearThenThink(wav){
+  busy = true; micBtn.classList.add('busy');
+  setEmotion('tänker');
+  let hörde = '';
+  try {
+    const res = await callBrain(wav, '/hor', true);
+    if (!res.ok) throw new Error(res.data.fel || ('fel ' + res.status));
+    hörde = String(res.data['hörde'] || '').trim();
+  } catch(e){
+    busy = false; micBtn.classList.remove('busy');
+    setEmotion('neutral'); play([['ledsen', 2000]]); sound('fel');
+    status('Kunde inte höra: ' + e.message, 8000);
+    return;
+  }
+  busy = false; micBtn.classList.remove('busy');
+  if (!hörde){ setEmotion('neutral'); play([['förvirrad', 1500]]); sound('förvirrad', {soft: true}); status('Jag uppfattade inte vad du sa – prova igen', 4000); return; }
+  think(hörde);
+}
+function stopTalking(){
+  interrupted = true;
+  if (currentSrc){ try { currentSrc.stop(); } catch(_){} }
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 async function listen(){
+  if (talking){ stopTalking(); return; }               // tryck under en saga = tyst
   if (busy) return;
   if (rState){ finishRecording(); return; }           // tryck igen = klar
   if (listening) return;
@@ -773,48 +854,89 @@ function askText(){
 }
 
 // ---------- Tänk (fråga hjärnan) ----------
-async function think(text, ljud){
+async function think(text){
   text = String(text || '').trim();
-  if ((!text && !ljud) || busy) return;
+  if (!text || busy) return;
   if (!serverUrl || !password){ status('Fyll i server-adress och lösenord under ⚙'); panel.classList.add('open'); return; }
   busy = true; micBtn.classList.add('busy'); lastActivity = performance.now();
   setEmotion('tänker'); sound('tänker');
-  if (text) history.push({role: 'user', content: text});
-  let svar;
+  const thinkLoop = setInterval(() => { if (Math.random() < .6) sound('tänker', {soft: true, extra: true}); }, 1400);
+  history.push({role: 'user', content: text});
+  let delar;
   try {
-    const res = await callBrain(ljud ? {messages: history.slice(-12), ljud} : {messages: history.slice(-12)});
-    svar = res.data;
-    if (!res.ok) throw new Error((svar.fel || ('fel ' + res.status)) + (svar.detalj ? ' – ' + svar.detalj : ''));
+    const res = await callBrain({messages: history.slice(-12)});
+    if (!res.ok) throw new Error((res.data.fel || ('fel ' + res.status)) + (res.data.detalj ? ' – ' + res.data.detalj : ''));
+    delar = res.data.delar;
+    // äldre hjärna (ett svar, en känsla) funkar också
+    if (!Array.isArray(delar)) delar = [{'säg': res.data['säg'], 'känsla': res.data['känsla']}];
+    delar = delar.filter(d => d && d['säg']);
+    if (!delar.length) throw new Error('tomt svar');
   } catch(e){
-    if (text) history.pop();
+    clearInterval(thinkLoop);
+    history.pop();
     busy = false; micBtn.classList.remove('busy');
     setEmotion('neutral'); play([['ledsen', 2500]]); sound('fel');
     status('Hjärnan svarar inte: ' + e.message, 9000);
     return;
   }
-  if (ljud){
-    if (!svar['hörde']){
-      busy = false; micBtn.classList.remove('busy');
-      setEmotion('neutral'); play([['förvånad', 1200]]); status('Jag uppfattade inte vad du sa – prova igen', 5000);
-      return;
-    }
-    history.push({role: 'user', content: svar['hörde']});
-  }
-  const ljudSvar = svar.ljud; delete svar.ljud; delete svar['hörde'];
-  history.push({role: 'assistant', content: JSON.stringify(svar)});
+  clearInterval(thinkLoop);
+  history.push({role: 'assistant', content: JSON.stringify({delar})});
   if (history.length > 20) history = history.slice(-20);
 
-  const k = norm(svar['känsla']);
-  setEmotion(k); sound(k);
-  await new Promise(r => setTimeout(r, 400));
-  let played = false;
-  if (ljudSvar){
-    try { await playRobotVoice(ljudSvar); played = true; }
-    catch(e){ status('Robotrösten krånglade – använder iPhone-rösten', 5000); }
-  } else if (svar['röstfel']) status('Azure-röst: ' + svar['röstfel'], 8000);
-  if (!played) await speak(svar['säg']);
-  busy = false; micBtn.classList.remove('busy'); lastActivity = performance.now();
-  setTimeout(() => { if (!busy && !listening && baseEmotion === k) setEmotion('neutral'); }, 2500);
+  busy = false; micBtn.classList.remove('busy');
+  const k = await speakParts(delar);
+  lastTalk = performance.now(); lastActivity = performance.now();
+  const hold = k === 'blunda' ? 20000 : (k === 'yr' || k === 'skrattar') ? 3500 : 2500;   // blunda = håll ögonen stängda en stund
+  setTimeout(() => { if (!busy && !listening && !talking && baseEmotion === k) setEmotion('neutral'); }, hold);
+}
+
+// Hämtar Frank-Y:s röst för en mening (null = använd iPhone-rösten)
+let azureVoice = true;
+async function fetchVoice(text){
+  if (!azureVoice) return null;
+  try {
+    const r = await fetch(serverUrl + '/rost', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-Robot-Password': password},
+      body: JSON.stringify({text}),
+    });
+    if (r.status === 501){ azureVoice = false; return null; }   // ingen Azure – fråga inte igen
+    if (!r.ok) return null;
+    return await r.arrayBuffer();
+  } catch(e){ return null; }
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Pratar del för del – ansiktet byter uttryck när varje del börjar
+async function speakParts(delar){
+  talking = true; interrupted = false;
+  micBtn.classList.add('on');
+  const voices = delar.map(d => fetchVoice(clean(d['säg'])));   // hämta alla direkt, första spelas när den är klar
+  let k = 'neutral';
+  for (let i = 0; i < delar.length && !interrupted; i++){
+    const d = delar[i]; const nk = norm(d['känsla']);
+    if (nk !== emotion || i === 0){
+      setEmotion(nk);
+      if (i === 0) sound(nk);
+      else if (Math.random() < .5) sound(nk, {soft: true, extra: true});
+    }
+    k = nk;
+    if (i === 0) await sleep(350);
+    const buf = await voices[i];
+    if (interrupted) break;
+    let ok = false;
+    if (buf){ try { await playRobotVoice(buf); ok = true; } catch(e){} }
+    if (!ok && !interrupted) await speak(d['säg']);
+    if (i < delar.length - 1 && !interrupted) await sleep(220);
+  }
+  micBtn.classList.remove('on');
+  talking = false;
+  if (interrupted){ interrupted = false; speaking = false; setEmotion('neutral'); play([['förvånad', 600]]); return 'neutral'; }
+  // Ibland ett litet avslutande ljud – frågande "bip?" efter frågor
+  const sist = String(delar[delar.length - 1]['säg'] || '').trim();
+  if (sist.endsWith('?')){ if (Math.random() < .6) setTimeout(() => sound('fråga', {soft: true, extra: true}), 250); }
+  else if (Math.random() < .25) setTimeout(() => sound('klart', {soft: true, extra: true}), 250);
+  return k;
 }
 
 micBtn.addEventListener('click', e => { e.stopPropagation(); listen(); });
@@ -840,8 +962,10 @@ addBtn('🧪 Testa hjärnan', async () => {
   } catch(e){ status('❌ ' + e.message, 12000); sound('fel'); }
 });
 addBtn('💬 Skriv', askText);
-addBtn('🔊 Testa rösten', () => { sound('glad'); setTimeout(() => speak('Hej! Jag heter Frank-Y. Vad heter du?'), 400); });
+addBtn('🔊 Testa rösten', () => { if (!talking) speakParts([{'säg': 'Hej! Jag heter Frank-Y. Vad heter du?', 'känsla': 'glad'}]); });
 addBtn('🧹 Glöm samtalet', () => { history = []; status('Samtalet är glömt'); });
+const sfxBtn = addBtn('🎵 Småljud', () => { smaljud = !smaljud; store.set('sfx', smaljud); sfxBtn.classList.toggle('on', smaljud); if (smaljud) sound('glad'); });
+sfxBtn.classList.toggle('on', smaljud);
 
 // ---------- Öppet gränssnitt ----------
 window.robot = { setEmotion, play, lookAt, speak, think, listen, sound,
