@@ -161,13 +161,13 @@ function lookAt(x, y, ms){
 }
 function updateGaze(now, dt){
   const faceVisible = face.visible;
-  if (now > nextJit){ jit = {x:rand(-.05,.05), y:rand(-.04,.04)}; nextJit = now + rand(500,1400); }
+  if (now > nextJit){ jit = {x:rand(-.03,.03), y:rand(-.025,.025)}; nextJit = now + rand(600,1600); }
 
   if (faceVisible){
     // titta på personen, men kika bort ibland så det känns naturligt
     if (now > nextGlance){
-      if (Math.random() < .3){ glanceUntil = now + rand(400,900); gT = {x:rand(-.9,.9), y:rand(-.5,.4)}; }
-      nextGlance = now + rand(2500,7000);
+      if (Math.random() < .12){ glanceUntil = now + rand(350,700); gT = {x:rand(-.9,.9), y:rand(-.5,.4)}; }
+      nextGlance = now + rand(4000,9000);
     }
     if (now > glanceUntil){ gT.x = face.x + jit.x; gT.y = face.y + jit.y; }
   } else if (now > nextSacc && now > glanceUntil){
@@ -230,8 +230,8 @@ function detect(now){
     for (const d of dets) if (d.boundingBox.width > best.boundingBox.width) best = d;
     const b = best.boundingBox, vw = video.videoWidth || 320, vh = video.videoHeight || 240;
     const xn = (b.originX + b.width/2) / vw, yn = (b.originY + b.height/2) / vh;
-    const fx = clamp((.5 - xn) * 2.4 * (mirror ? -1 : 1), -1, 1);
-    const fy = clamp((yn - .45) * 2.4, -1, 1);
+    const fx = clamp((.5 - xn) * 3.2 * (mirror ? -1 : 1), -1, 1);
+    const fy = clamp((yn - .45) * 3.0, -1, 1);
     if (!face.visible) onFaceAppear(now);
     face.x += (fx - face.x) * .5; face.y += (fy - face.y) * .5;
     face.size += (b.width/vw - face.size) * .3;
@@ -353,20 +353,21 @@ function render(t, now){
   const age = (now - changeAt) / 1000;
   const sq = Math.exp(-age * 6) * Math.sin(age * 20) * .1;          // studs vid nytt uttryck
   const prox = face.visible ? 1 + clamp((face.size - .3) * .4, 0, .15) : 1; // nära = större ögon
-  const tv = .5 + .5 * (Math.sin(t*13) * .6 + Math.sin(t*7.7) * .4);
+  const tv = voiceLevel >= 0 ? voiceLevel : .5 + .5 * (Math.sin(t*13) * .6 + Math.sin(t*7.7) * .4);
   const T = Math.max(cur.talk, talkAmt);
   const talkH = 1 - T * .14 * tv;
   const sx = (1 + sq) * breathe * prox, sy = (1 - sq) * breathe * prox * talkH;
   const bounceY = Math.sin(t * 3.2) * cur.bounce * bh * .06 - T * tv * bh * .03;
-  const ox = g.x * bw * .55, oy = g.y * bh * .42;
+  const ox = g.x * bw * .85, oy = g.y * bh * .55;
   const gap = bw * .85;
 
   ctx.save();
   ctx.translate(W/2, H/2 + bounceY);
-  ctx.rotate(cur.roll * Math.PI / 180);
+  ctx.rotate((cur.roll + g.x * 5) * Math.PI / 180);   // lutar huvudet åt det håll den tittar
   // ögat åt det håll den tittar blir lite större (perspektiv)
-  drawEye(-gap + ox, oy, cur.L, -1, bw, bh, sx * (1 - g.x*.07), sy * (1 - g.x*.07), t);
-  drawEye( gap + ox, oy, cur.R,  1, bw, bh, sx * (1 + g.x*.07), sy * (1 + g.x*.07), t);
+  const pv = .14;
+  drawEye(-gap + ox, oy, cur.L, -1, bw, bh, sx * (1 - g.x*pv), sy * (1 - g.x*pv*.6), t);
+  drawEye( gap + ox, oy, cur.R,  1, bw, bh, sx * (1 + g.x*pv), sy * (1 + g.x*pv*.6), t);
 
   if (cur.blush > .02){
     for (const s of [-1, 1]){
@@ -386,6 +387,7 @@ function frame(now){
   const dt = Math.min(.05, (now - last) / 1000); last = now;
   lerpObj(cur, target, 1 - Math.exp(-dt * target.speed));
   talkAmt += ((speaking ? 1 : 0) - talkAmt) * (1 - Math.exp(-dt * 10));
+  updateVoiceLevel();
   detect(now);
   updateGaze(now, dt);
   updateBlink(now);
@@ -536,56 +538,133 @@ function sound(n){ try { (SOUNDS[n] || SOUNDS.neutral)(); } catch(e){} }
 let svVoice = null;
 function pickVoice(){
   const sv = speechSynthesis.getVoices().filter(v => /^sv/i.test(v.lang));
-  svVoice = sv.find(v => /alva|klara/i.test(v.name)) || sv[0] || null;
+  const local = sv.filter(v => v.localService !== false);
+  svVoice = local.find(v => /alva|klara/i.test(v.name)) || local[0] || null;
 }
 if ('speechSynthesis' in window){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 
 const clean = s => String(s || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/[*_#`]/g, '').trim();
 
+let voiceFailed = false;
 function speak(text){
   return new Promise(res => {
     text = clean(text);
     if (!text || !('speechSynthesis' in window)){ res(); return; }
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'sv-SE'; if (svVoice) u.voice = svVoice;
-    u.pitch = VOICE.pitch; u.rate = VOICE.rate;
-    let finished = false;
+    let finished = false, started = false;
     const done = () => { if (finished) return; finished = true; speaking = false; res(); };
-    u.onstart = () => { speaking = true; };
-    u.onend = done; u.onerror = done;
-    speaking = true;
-    speechSynthesis.speak(u);
-    setTimeout(done, 3000 + text.length * 110);   // reserv om iPhone glömmer säga "klar"
+    const go = () => {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'sv-SE';
+      if (svVoice && !voiceFailed) u.voice = svVoice;
+      u.pitch = VOICE.pitch; u.rate = VOICE.rate; u.volume = 1;
+      u.onstart = () => { started = true; speaking = true; };
+      u.onend = done;
+      u.onerror = e => {
+        // Prova igen med telefonens standardröst om den valda inte fungerar
+        if (!started && !voiceFailed && svVoice){ voiceFailed = true; setTimeout(go, 200); return; }
+        if (e.error !== 'interrupted' && e.error !== 'canceled') status('Röstfel: ' + (e.error || 'okänt'), 8000);
+        done();
+      };
+      speaking = true;
+      speechSynthesis.speak(u);
+      setTimeout(() => { if (!started && !finished) speechSynthesis.resume(); }, 1200);
+      setTimeout(() => { if (!started && !finished) status('Rösten startade inte – kolla ljudlöst-knappen och volymen', 8000); }, 4000);
+    };
+    // Safari tappar ibland repliken om man avbryter och pratar direkt efter – vänta lite
+    if (speechSynthesis.speaking || speechSynthesis.pending){ speechSynthesis.cancel(); setTimeout(go, 300); }
+    else go();
+    setTimeout(done, 5000 + text.length * 110);   // reserv om iPhone glömmer säga "klar"
   });
 }
 
-// iPhone kräver att ljud och röst "låses upp" av en första beröring
-let unlocked = false;
-document.addEventListener('pointerdown', () => {
+// ---------- Robotröst: spela Azure-ljudet med robotklang ----------
+// Ändra fritt: ring = metallisk robotton, metal = plåtigt eko, speed = tempo/tonhöjd
+const ROBOT_FX = { ring: .35, ringHz: 48, metal: .3, speed: 1.04 };
+let voiceLevel = -1, analyser = null, levelBuf = null;
+function updateVoiceLevel(){
+  if (!analyser || !speaking){ voiceLevel = -1; return; }
+  analyser.getByteTimeDomainData(levelBuf);
+  let sum = 0; for (let i = 0; i < levelBuf.length; i++){ const v = (levelBuf[i] - 128) / 128; sum += v*v; }
+  const rms = Math.sqrt(sum / levelBuf.length);
+  const target = clamp(rms * 4, 0, 1);
+  voiceLevel = voiceLevel < 0 ? target : voiceLevel + (target - voiceLevel) * .5;
+}
+async function playRobotVoice(b64){
+  const a = audio(); if (!a) throw new Error('inget ljud');
+  const bin = atob(b64), buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  const audioBuf = await new Promise((ok, bad) => a.decodeAudioData(buf.buffer, ok, bad));
+  return new Promise(res => {
+    const src = a.createBufferSource(); src.buffer = audioBuf; src.playbackRate.value = ROBOT_FX.speed;
+    const out = a.createGain(); out.gain.value = 1.1;
+    const comp = a.createDynamicsCompressor();
+    const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 140;
+    // ren röst
+    const dry = a.createGain(); dry.gain.value = 1 - ROBOT_FX.ring * .5;
+    src.connect(dry).connect(hp);
+    // ringmodulator = klassisk robotklang
+    const ring = a.createGain(); ring.gain.value = 0;
+    const osc = a.createOscillator(); osc.frequency.value = ROBOT_FX.ringHz;
+    const oscAmt = a.createGain(); oscAmt.gain.value = ROBOT_FX.ring; osc.connect(oscAmt).connect(ring.gain);
+    src.connect(ring).connect(hp);
+    // kort eko med återkoppling = plåtig "burk"-ton
+    const dl = a.createDelay(); dl.delayTime.value = .007;
+    const fb = a.createGain(); fb.gain.value = .45;
+    const wet = a.createGain(); wet.gain.value = ROBOT_FX.metal;
+    src.connect(dl); dl.connect(fb).connect(dl); dl.connect(wet).connect(hp);
+    hp.connect(comp).connect(out).connect(a.destination);
+    analyser = a.createAnalyser(); analyser.fftSize = 512; levelBuf = new Uint8Array(analyser.fftSize);
+    out.connect(analyser);
+    let fin = false;
+    const done = () => { if (fin) return; fin = true; speaking = false; try { osc.stop(); } catch(_){} res(); };
+    src.onended = done;
+    speaking = true; osc.start(); src.start();
+    setTimeout(done, audioBuf.duration / ROBOT_FX.speed * 1000 + 1500);
+  });
+}
+
+// iPhone kräver att rösten "låses upp" av en riktig tryckning (pointerup/click,
+// inte pointerdown). Första tryckningen får Frank-Y att säga "Hej!".
+let unlocked = false, unlockPromise = null;
+function unlockVoice(){
   audio(); keepAwake();
-  if (!unlocked && 'speechSynthesis' in window){
-    unlocked = true;
-    const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u);
-  }
-}, {capture: true});
+  if (unlocked || !('speechSynthesis' in window)) return;
+  unlocked = true;
+  unlockPromise = new Promise(r => {
+    const u = new SpeechSynthesisUtterance('Hej!');
+    u.lang = 'sv-SE'; if (svVoice) u.voice = svVoice;
+    u.pitch = VOICE.pitch; u.rate = VOICE.rate;
+    let d = false; const f = () => { if (d) return; d = true; speaking = false; unlockPromise = null; r(); };
+    u.onend = f; u.onerror = f;
+    speaking = true; speechSynthesis.speak(u);
+    setTimeout(f, 2500);
+  });
+}
+document.addEventListener('pointerup', unlockVoice, {capture: true});
+document.addEventListener('click', unlockVoice, {capture: true});
+// När appen varit i bakgrunden kan iPhone låsa rösten igen
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') unlocked = false; });
 
 // ---------- Lyssna (tal till text) ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-function listen(){
+async function listen(){
   if (busy || listening) return;
+  if (unlockPromise) await unlockPromise;   // låt "Hej!" pratas klart först
   if (!SR){ status('Taligenkänning saknas här – skriv istället'); askText(); return; }
   if ('speechSynthesis' in window) speechSynthesis.cancel();
   const rec = new SR();
   rec.lang = 'sv-SE'; rec.interimResults = false; rec.maxAlternatives = 1; rec.continuous = false;
   let got = false;
-  rec.onresult = e => { got = true; think(e.results[0][0].transcript); };
+  let heard = '';
+  rec.onresult = e => { got = true; heard = e.results[0][0].transcript; try { rec.stop(); } catch(_){} };
   rec.onerror = e => {
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed') status('Mikrofonen är blockerad – öppna i Safari');
   };
   rec.onend = () => {
     listening = false; micBtn.classList.remove('on');
-    if (!got && !busy){ sound('klar'); setEmotion('neutral'); }
+    // Vänta tills iPhone släppt mikrofonen helt – annars blir rösten tyst
+    if (got){ setTimeout(() => think(heard), 600); return; }
+    if (!busy){ sound('klar'); setEmotion('neutral'); }
   };
   listening = true; lastActivity = performance.now();
   micBtn.classList.add('on'); sound('lyssnar'); setEmotion('lyssnar');
@@ -622,7 +701,12 @@ async function think(text){
   const k = norm(svar['känsla']);
   setEmotion(k); sound(k);
   await new Promise(r => setTimeout(r, 400));
-  await speak(svar['säg']);
+  let played = false;
+  if (svar.ljud){
+    try { await playRobotVoice(svar.ljud); played = true; }
+    catch(e){ status('Robotrösten krånglade – använder iPhone-rösten', 5000); }
+  } else if (svar['röstfel']) status('Azure-röst: ' + svar['röstfel'], 8000);
+  if (!played) await speak(svar['säg']);
   busy = false; micBtn.classList.remove('busy'); lastActivity = performance.now();
   setTimeout(() => { if (!busy && !listening && baseEmotion === k) setEmotion('neutral'); }, 2500);
 }
