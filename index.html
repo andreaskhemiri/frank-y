@@ -29,6 +29,10 @@
         opacity:0;transform:translateY(24px);transition:opacity .45s,transform .45s;pointer-events:none;z-index:1;
         color:#fff;font-family:ui-rounded,"SF Pro Rounded",system-ui,-apple-system,sans-serif;font-weight:700;text-align:center}
   #visa.on{opacity:1;transform:none}
+  #visa.sing .bild{animation:hopp .5s ease-in-out infinite alternate}
+  #visa.sing .text{font-size:min(9vh,6.5vw)}
+  #visa .text.liten{font-size:min(6.5vh,5vw);opacity:.75}
+  @keyframes hopp{from{transform:translateY(0) rotate(-4deg)}to{transform:translateY(-1.2vh) rotate(4deg)}}
   #sheet{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;z-index:10;padding:16px;
          font-family:system-ui,-apple-system,sans-serif;color:#fff}
   #sheet.open{display:flex}
@@ -107,6 +111,7 @@ const EXPR = {
   uttråkad: {L:{h:.95,lid:.5}, color:[110,170,200], gx:-.5, gy:.1, speed:4},
   yr:       {L:{}, color:[200,200,255], spin:1, sway:.6, speed:6},
   busig:    {L:{lid:.22,tilt:.12,smile:.45}, R:{lid:.05,smile:.45}, color:[150,255,200], roll:6, gx:.3},
+  sjunger:  {L:{h:.95,smile:.45}, color:[130,240,255], blush:.4, bounce:1, sway:.7, speed:10},
 };
 for (const n in EXPR) {
   const e = EXPR[n];
@@ -411,7 +416,8 @@ function render(t, now){
   const T = Math.max(cur.talk, talkAmt);
   const talkH = 1 - T * .14 * tv;
   const sx = (1 + sq) * breathe * prox * (1 + ll * .07), sy = (1 - sq) * breathe * prox * talkH * (1 + ll * .07);
-  const bounceY = Math.sin(t * 3.2) * cur.bounce * bh * .06 - T * tv * bh * .03
+  const nodP = clamp((now - nodAt) / 380, 0, 1);
+  const bounceY = Math.sin(nodP * Math.PI) * bh * .07 + Math.sin(t * 3.2) * cur.bounce * bh * .06 - T * tv * bh * .03
                 + Math.abs(Math.sin(t * 13)) * cur.jiggle * bh * -.05;
   const ox = g.x * bw * .85 + Math.sin(t * 38) * cur.shiver * bw * .025 + Math.cos(t * 6) * cur.spin * bw * .5;
   const oy = g.y * bh * .55 + Math.sin(t * 6) * cur.spin * bh * .4;
@@ -461,6 +467,7 @@ requestAnimationFrame(frame);
 let taps = [];
 cv.addEventListener('pointerdown', e => {
   if (panel.classList.contains('open')){ panel.classList.remove('open'); return; }
+  if (song && song.next){ song.next(); return; }        // sjung-med: tryck = nästa rad
   const now = performance.now();
   lastActivity = now; keepAwake();
   lookAt((e.clientX / W - .5) * 2, (e.clientY / H - .5) * 2, 900);
@@ -567,6 +574,7 @@ function audio(){
   if (ac && ac.state === 'suspended') ac.resume();
   return ac;
 }
+let nodAt = -1e9;   // senaste nicken
 let pm = 1, vm = 1;   // slumpad tonhöjd/volym så att ljuden aldrig låter exakt likadant
 function tone(f1, f2, dur, delay = 0, type = 'sine', vol = .18){
   const a = audio(); if (!a) return;
@@ -581,40 +589,69 @@ function tone(f1, f2, dur, delay = 0, type = 'sine', vol = .18){
   o.connect(gn).connect(a.destination);
   o.start(t0); o.stop(t0 + dur + .05);
 }
+// "Chirp" = en robotstavelse: tonen glider genom flera punkter, med valfritt vibrato och vokalfilter
+// pts: [[tid i sekunder, frekvens], ...]
+function chirp(pts, o = {}){
+  const a = audio(); if (!a) return;
+  const t0 = a.currentTime + (o.delay || 0) + .01, end = pts[pts.length - 1][0];
+  const osc = a.createOscillator(); osc.type = o.type || 'sine';
+  osc.frequency.setValueAtTime(pts[0][1] * pm, t0);
+  for (let i = 1; i < pts.length; i++) osc.frequency.exponentialRampToValueAtTime(Math.max(40, pts[i][1] * pm), t0 + pts[i][0]);
+  let lfo = null;
+  if (o.vib){
+    lfo = a.createOscillator(); lfo.frequency.value = o.vibHz || 6;
+    const d = a.createGain(); d.gain.value = o.vib * pts[0][1] * pm; lfo.connect(d).connect(osc.frequency);
+  }
+  const vol = (o.vol || .14) * vm * (o.formant ? 2.2 : 1);
+  const g = a.createGain();
+  g.gain.setValueAtTime(.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0 + Math.min(.025, end * .3));
+  g.gain.setValueAtTime(vol, t0 + end * .6);
+  g.gain.exponentialRampToValueAtTime(.0001, t0 + end);
+  let node = osc;
+  if (o.formant){ const f = a.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = o.formant; f.Q.value = o.q || 1.5; osc.connect(f); node = f; }
+  node.connect(g).connect(a.destination);
+  osc.start(t0); osc.stop(t0 + end + .05);
+  if (lfo){ lfo.start(t0); lfo.stop(t0 + end + .05); }
+}
+const j = (x, p = .08) => x * rand(1 - p, 1 + p);   // liten slumpvariation
 const SOUNDS = {
-  glad:     () => { tone(700,1100,.09); tone(900,1500,.1,.1); tone(1200,1800,.08,.22); },
-  förvånad: () => { tone(400,1800,.28,0,'triangle'); },
-  ledsen:   () => { tone(620,300,.55,0,'triangle',.15); },
-  arg:      () => { tone(180,140,.18,0,'square',.07); tone(170,120,.22,.2,'square',.07); },
-  kär:      () => { tone(660,700,.18,0,'sine',.14); tone(880,940,.28,.2,'sine',.14); },
-  nyfiken:  () => { tone(500,900,.12); tone(700,1300,.14,.15); },
-  sömnig:   () => { tone(420,240,.7,0,'sine',.1); },
-  tänker:   () => { tone(500,520,.08,0,'sine',.08); tone(600,620,.08,.25,'sine',.08); tone(700,720,.08,.5,'sine',.08); },
-  neutral:  () => { tone(800,1000,.08); tone(1000,900,.06,.1); },
-  lyssnar:  () => { tone(900,1400,.08); },
-  klar:     () => { tone(1200,800,.07); },
-  fel:      () => { tone(300,200,.35,0,'triangle',.12); },
-  hej:      () => { tone(600,900,.08); tone(900,1300,.08,.09); tone(1300,1000,.1,.19); },
-  fråga:    () => { tone(700,750,.07,0,'sine',.14); tone(800,1400,.15,.1,'sine',.14); },
-  klart:    () => { tone(1000,1200,.06,0,'sine',.12); tone(900,600,.09,.08,'sine',.12); },
-  gäsp:     () => { tone(500,700,.3,0,'triangle',.1); tone(700,250,.8,.3,'triangle',.1); },
-  snark:    () => { tone(140,110,.6,0,'sine',.08); },
-  fundera:  () => { tone(650,600,.12,0,'sine',.09); tone(560,720,.18,.15,'sine',.09); },
-  skrattar: () => { for (let i = 0; i < 5; i++) tone(900 + i*60, 1250 + i*60, .07, i*.11, 'sine', .14); },
-  blunda:   () => { tone(700,400,.35,0,'sine',.08); },
-  blinka:   () => { tone(1200,1800,.06,0,'sine',.12); tone(1800,1500,.08,.07,'sine',.1); },
-  rädd:     () => { for (let i = 0; i < 4; i++) tone(1300, 1100, .06, i*.08, 'triangle', .09); },
-  förvirrad:() => { tone(600,900,.12,0,'sine',.11); tone(900,500,.12,.13,'sine',.11); tone(500,800,.14,.27,'sine',.11); },
-  blyg:     () => { tone(800,1000,.1,0,'sine',.07); },
-  stolt:    () => { tone(520,520,.1,0,'triangle',.12); tone(660,660,.1,.12,'triangle',.12); tone(880,880,.22,.24,'triangle',.12); },
-  uttråkad: () => { tone(300,260,.5,0,'sine',.09); },
-  yr:       () => { for (let i = 0; i < 6; i++) tone(700 + Math.sin(i)*300, 700 + Math.cos(i)*300, .09, i*.09, 'sine', .1); },
-  busig:    () => { tone(900,1300,.07,0,'sine',.12); tone(1100,1500,.07,.12,'sine',.12); tone(1500,1100,.09,.24,'sine',.1); },
+  glad:     () => { chirp([[0,j(700)],[.07,j(1150)]]); chirp([[0,j(900)],[.08,j(1500)]], {delay:.1}); chirp([[0,1300],[.06,j(1750)],[.13,1200]], {delay:.21}); },
+  skrattar: () => { const n = 4 + (Math.random()*3|0); for (let i = 0; i < n; i++) chirp([[0,1300-i*70],[.045,1650-i*70],[.09,1150-i*70]], {delay:i*j(.1,.15), vol:.11, formant:1500, q:1}); },
+  ledsen:   () => { chirp([[0,j(620)],[.25,560],[.75,j(290)]], {type:'triangle', vib:.025, vibHz:5, vol:.13}); },
+  förvånad: () => { chirp([[0,j(340)],[.17,j(1500)],[.3,1950],[.4,1700]], {type:'triangle', vol:.15}); },
+  arg:      () => { chirp([[0,190],[.13,150]], {type:'sawtooth', vol:.07, formant:520, q:2}); chirp([[0,175],[.2,120]], {type:'sawtooth', delay:.17, vol:.07, formant:460, q:2}); },
+  sömnig:   () => { chirp([[0,450],[.35,j(700)],[1.1,230]], {type:'triangle', vol:.08, vib:.012, vibHz:3}); },
+  gäsp:     () => { chirp([[0,450],[.35,j(720)],[1.2,220]], {type:'triangle', vol:.09, vib:.012, vibHz:3}); },
+  kär:      () => { chirp([[0,520],[.2,j(660)],[.36,640]], {vib:.015, vibHz:4, vol:.11}); chirp([[0,700],[.25,j(880)],[.48,840]], {delay:.33, vib:.015, vibHz:4, vol:.11}); },
+  nyfiken:  () => { chirp([[0,j(520)],[.12,500],[.3,j(950)]], {vol:.13}); if (Math.random() < .5) chirp([[0,900],[.1,1300]], {delay:.34, vol:.09}); },
+  tänker:   () => { const n = 2 + (Math.random()*2|0); for (let i = 0; i < n; i++){ const f = rand(450, 760); chirp([[0,f],[.06,f*1.06]], {delay:i*rand(.17,.28), vol:.06}); } },
+  lyssnar:  () => { chirp([[0,900],[.07,1350]], {vol:.08}); },
+  klar:     () => { chirp([[0,1150],[.07,800]], {vol:.07}); },
+  neutral:  () => { chirp([[0,j(800)],[.07,1000]]); chirp([[0,1000],[.06,j(880)]], {delay:.1}); },
+  hej:      () => { chirp([[0,600],[.08,j(950)]]); chirp([[0,900],[.08,j(1350)]], {delay:.1}); chirp([[0,1300],[.12,1000]], {delay:.2}); },
+  fråga:    () => { chirp([[0,700],[.07,720]], {vol:.11}); chirp([[0,780],[.17,j(1450)]], {delay:.1, vol:.11}); },
+  klart:    () => { chirp([[0,1000],[.06,1250]], {vol:.1}); chirp([[0,950],[.09,620]], {delay:.08, vol:.1}); },
+  snark:    () => { chirp([[0,140],[.6,110]], {type:'sawtooth', formant:420, q:3, vol:.04}); },
+  fundera:  () => { chirp([[0,650],[.12,600]], {vol:.08}); chirp([[0,560],[.2,j(720)]], {delay:.15, vol:.08}); },
+  fel:      () => { chirp([[0,320],[.38,170]], {type:'triangle', vol:.11}); },
+  blunda:   () => { chirp([[0,700],[.35,400]], {vol:.07}); },
+  blinka:   () => { chirp([[0,1500],[.05,j(2100)],[.13,1800]], {vol:.1}); },
+  rädd:     () => { chirp([[0,1100],[.5,j(1300)]], {type:'triangle', vib:.06, vibHz:14, vol:.08}); },
+  förvirrad:() => { chirp([[0,600],[.12,j(900)],[.24,550],[.38,j(850)],[.52,700]], {vol:.1}); },
+  blyg:     () => { chirp([[0,750],[.16,j(950)]], {vol:.06}); },
+  stolt:    () => { chirp([[0,520],[.1,520]], {type:'triangle', vol:.11}); chirp([[0,660],[.1,660]], {type:'triangle', delay:.12, vol:.11}); chirp([[0,880],[.32,880]], {type:'triangle', delay:.24, vib:.01, vibHz:6, vol:.11}); },
+  uttråkad: () => { chirp([[0,330],[.55,275]], {type:'triangle', vol:.08}); },
+  yr:       () => { const p = []; for (let i = 0; i <= 8; i++) p.push([i*.09, 700 + Math.sin(i*1.4)*300]); chirp(p, {vol:.09}); },
+  busig:    () => { chirp([[0,900],[.06,1300]]); chirp([[0,1100],[.06,1500]], {delay:.12}); chirp([[0,1500],[.1,1000]], {delay:.24}); },
+  // lyssnarljud – väldigt tysta, medan barnen pratar
+  mm:       () => { chirp([[0,j(520)],[.12,j(560)],[.22,520]], {vol:.045, vib:.01, vibHz:5}); },
+  oj:       () => { chirp([[0,j(600)],[.12,j(1100)]], {vol:.05}); },
 };
 let smaljud = store.get('sfx', true);   // kan stängas av i ⚙-menyn
 function sound(n, opts = {}){
   if (opts.extra && !smaljud) return;
-  pm = rand(.88, 1.14); vm = opts.soft ? .55 : 1;
+  pm = rand(.88, 1.14); vm = opts.quiet ? .4 : opts.soft ? .55 : 1;
   try { (SOUNDS[n] || SOUNDS.neutral)(); } catch(e){}
   pm = 1; vm = 1;
 }
@@ -801,14 +838,22 @@ function onMic(c, d){
     else if (now - c.lastActive > CONVO.endAfterMs) endConvo(true);
   } else if (c.phase === 'speech'){
     c.chunks.push(d);
-    if (rms > thr) c.lastVoice = now;
+    if (rms > thr){ c.lastVoice = now; c.peak = Math.max(c.peak || 0, rms); c.bcDone = false; }
+    // Aktiv lyssnare: ett tyst "mm" eller "oj" och en liten nick i korta pauser
+    else if (!c.bcDone && now - c.lastVoice > 300 && now - c.lastVoice < 800 && c.lastVoice - c.voiceStart > 1500 && now - (c.lastBack || 0) > 3500){
+      c.bcDone = true;
+      if (smaljud && Math.random() < .45){
+        c.lastBack = now; nodAt = now;
+        sound((c.peak || 0) > Math.max(.08, thr * 5) ? 'oj' : 'mm', {quiet: true});
+      }
+    }
     if (now - c.lastVoice > CONVO.silenceMs || now - c.voiceStart > CONVO.maxSpeechMs){
       const chunks = c.chunks; c.chunks = [];
       if (c.lastVoice - c.voiceStart < 250){ c.phase = 'listen'; micBtn.classList.remove('on'); return; }  // bara ett ljud, inget prat
       c.phase = 'wait'; micBtn.classList.remove('on');
       hearThenThink(toWav16k(chunks, c.rate));
     }
-  } else if (c.phase === 'talk' && bargeOn){
+  } else if (c.phase === 'talk' && bargeOn && !song){
     // Avbryt: någon pratar tydligt medan Frank-Y pratar
     if (rms > Math.max(c.noise * 5, .045)){
       if (!c.bargeSince) c.bargeSince = now;
@@ -891,10 +936,11 @@ async function hearThenThink(wav){
     setEmotion('neutral'); play([['förvirrad', 1500]]); sound('förvirrad', {soft: true});
     return;
   }
-  think(hörde);
+  think(hörde, {react: reactTo(hörde)});
 }
 function stopTalking(){
   interrupted = true;
+  stopSong();
   if (currentSrc){ try { currentSrc.stop(); } catch(_){} }
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
@@ -1071,13 +1117,35 @@ async function autoListen(){
   catch(e){ listening = false; micBtn.classList.remove('convo'); }   // går inte utan tryck – då får barnen trycka själva
 }
 
+// Snabb första reaktion på det barnet sa – innan hjärnan hunnit svara
+const ORD = alts => new RegExp('(?:^|[^a-zåäö])(?:' + alts + ')');   // ordet måste börja där
+const REAKTION = [
+  ['ledsen',   ORD('ledsen|gråt|ont |slog mig|trilla|ramla|skadad|dog |död|saknar|tappade|sönder|arg på|bråk|retas')],
+  ['rädd',     ORD('rädd|läskig|monster|spöke|mörkt|mardröm|åska')],
+  ['skrattar', ORD('haha|hihi|bajs|prutt|fis |fisa|tokig|knasig|skämt|rolig')],
+  ['förvånad', ORD('wow|oj |oj!|titta|kolla|gissa vad|vet du vad|jättestor|världens|vann |gjorde mål|fick en')],
+  ['kär',      ORD('älskar|kram|puss|gillar dig|bästa vän|mysig')],
+  ['glad',     ORD('grattis|födelsedag|jippi|hurra|yay|roligt|kul |glad |bra ')],
+  ['nyfiken',  ORD('varför|hur |vad är|vem |vilken|vilket')],
+];
+function reactTo(text){
+  const t = ' ' + String(text || '').toLowerCase() + ' ';
+  if (/(bli |gör en|kan du (bli|blunda|göra|visa))/.test(t)) return null;   // ett önskemål – låt hjärnan göra det
+  for (const [k, rx] of REAKTION) if (rx.test(t)) return k;
+  return null;
+}
+
 // ---------- Tänk (fråga hjärnan) ----------
 async function think(text, opts = {}){
   text = String(text || '').trim();
   if (!text || busy) return;
   if (!serverUrl || !password){ status('Fyll i server-adress och lösenord under ⚙'); panel.classList.add('open'); return; }
   busy = true; micBtn.classList.add('busy'); lastActivity = performance.now();
-  setEmotion('tänker'); sound('tänker');
+  if (opts.react){
+    // visa en känsla direkt, tänk sen
+    setEmotion(opts.react); sound(opts.react, {quiet: true, extra: true});
+    setTimeout(() => { if (busy) setEmotion('tänker'); }, 1100);
+  } else { setEmotion('tänker'); sound('tänker'); }
   const thinkLoop = setInterval(() => { if (Math.random() < .6) sound('tänker', {soft: true, extra: true}); }, 1400);
   history.push({role: 'user', content: text});
   let delar;
@@ -1210,6 +1278,127 @@ function answer(btn, opt){
   setTimeout(() => think('Jag svarar: ' + opt), talking ? 400 : 250);
 }
 
+// ============================================================
+//  SÅNG – Frank-Y sjunger med 8-bitars-melodi och robotnynnande
+//  Bara fria (traditionella) sånger och egna sånger finns här.
+// ============================================================
+const TWINKLE = 'C4 C4 G4 G4 A4 A4 G4:2 | F4 F4 E4 E4 D4 D4 C4:2 | G4 G4 F4 F4 E4 E4 D4:2 | G4 G4 F4 F4 E4 E4 D4:2 | C4 C4 G4 G4 A4 A4 G4:2 | F4 F4 E4 E4 D4 D4 C4:2';
+const SÅNGBOK = {
+  // Gammal fri melodi – Frank-Y nynnar, barnen sjunger orden
+  'blinka lilla stjärna': {titel: 'Blinka lilla stjärna', emoji: '⭐✨⭐', melodi: TWINKLE, bpm: 92},
+  'bä bä vita lamm':      {titel: 'Bä, bä, vita lamm', emoji: '🐑🐑🐑', melodi: TWINKLE, bpm: 100},
+  // Traditionella texter (fria) – familjen sjunger, Frank-Y visar orden och dansar.
+  // Tryck på skärmen för att gå till nästa rad i egen takt.
+  'ja må han leva': {titel: '🎂 Grattis! 🎂', emoji: '🎂🎉🎈', rader: p => [
+      `Ja, må ${p} leva!\nJa, må ${p} leva!`, `Ja, må ${p} leva\nuti hundrade år!`,
+      `Ja, visst ska ${p} leva!\nJa, visst ska ${p} leva!`, `Ja, visst ska ${p} leva\nuti hundrade år!`], hurra: true, sek: 6},
+  'små grodorna': {titel: 'Små grodorna', emoji: '🐸🐸🐸', rader: () => [
+      'Små grodorna, små grodorna\när lustiga att se.', 'Små grodorna, små grodorna\när lustiga att se.',
+      'Ej öron, ej öron,\nej svansar hava de.', 'Ej öron, ej öron,\nej svansar hava de.',
+      'Kou ack ack ack, kou ack ack ack,\nkou ack ack ack ack kaa!', 'Kou ack ack ack, kou ack ack ack,\nkou ack ack ack ack kaa!'], sek: 5},
+};
+const SÅNG_ALIAS = {'ja må hon leva': 'ja må han leva', 'ja må du leva': 'ja må han leva', 'ja må de leva': 'ja må han leva',
+  'grattis': 'ja må han leva', 'blinka': 'blinka lilla stjärna', 'bä bä': 'bä bä vita lamm', 'grodorna': 'små grodorna'};
+
+let song = null;   // pågående sång
+function noteFreq(n){
+  const m = /^([A-Ga-g])(#|b)?(\d)?$/.exec(n); if (!m) return 0;
+  const base = {c:0, d:2, e:4, f:5, g:7, a:9, b:11}[m[1].toLowerCase()];
+  const midi = 12 * ((m[3] ? +m[3] : 4) + 1) + base + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+function parseMelody(str){        // "C4 D4 E4:2 | G4 ..." → rader med toner
+  return String(str).split('|').map(line => line.trim().split(/\s+/).filter(Boolean).map(tok => {
+    const [n, l] = tok.split(':'); return {f: noteFreq(n), beats: Math.min(4, Math.max(.5, parseFloat(l) || 1))};
+  }).filter(x => x.f > 0)).filter(l => l.length);
+}
+function songTone(bus, t, f, dur){
+  const a = ac;
+  // 8-bitars-instrument
+  const o = a.createOscillator(); o.type = 'square'; o.frequency.value = f;
+  const g = a.createGain(); g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.05, t + .015);
+  g.gain.exponentialRampToValueAtTime(.025, t + dur * .5); g.gain.exponentialRampToValueAtTime(.0001, t + dur * .95);
+  o.connect(g).connect(bus); o.start(t); o.stop(t + dur);
+  // robotens "dooo"-röst: sågtand genom ett vokalfilter, med lite vibrato
+  const v = a.createOscillator(); v.type = 'sawtooth'; v.frequency.value = f;
+  const lfo = a.createOscillator(); lfo.frequency.value = 5.5; const la = a.createGain(); la.gain.value = f * .012;
+  lfo.connect(la).connect(v.frequency);
+  const bp = a.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 650; bp.Q.value = 2.5;
+  const vg = a.createGain(); vg.gain.setValueAtTime(.0001, t); vg.gain.exponentialRampToValueAtTime(.22, t + .04);
+  vg.gain.exponentialRampToValueAtTime(.0001, t + dur * .92);
+  v.connect(bp).connect(vg).connect(bus); v.start(t); lfo.start(t); v.stop(t + dur); lfo.stop(t + dur);
+}
+function stopSong(){
+  if (!song) return;
+  const s = song; song = null;
+  s.timers.forEach(clearTimeout);
+  try { s.bus.gain.setTargetAtTime(0, ac.currentTime, .05); setTimeout(() => s.bus.disconnect(), 300); } catch(_){}
+  visaEl.classList.remove('sing');
+  s.done();
+}
+function showSongLine(emoji, text, small){
+  showVisa({bild: emoji, text: ''});
+  const t = visaInner.querySelector('.text') || el('div', {className: 'text'}, visaInner);
+  t.textContent = text; t.style.whiteSpace = 'pre-line'; t.classList.toggle('liten', !!small);
+  visaEl.classList.add('sing'); requestAnimationFrame(fitVisa);
+}
+function playSong(spec){
+  return new Promise(resolve => {
+    const a = audio(); if (!a){ resolve(); return; }
+    stopSong();
+    let def = null;
+    if (spec.id){ const id = SÅNG_ALIAS[spec.id] || spec.id; def = SÅNGBOK[id]; }
+    else if (Array.isArray(spec.rader)) def = {titel: spec.titel, emoji: safeBild(spec.emoji) || '🎵', egen: spec.rader, bpm: 104};
+    if (!def){ resolve(); return; }
+    const bus = a.createGain(); bus.gain.value = 1; bus.connect(a.destination);
+    const s = song = {bus, timers: [], done: () => {}, next: null};
+    const after = (ms, fn) => s.timers.push(setTimeout(() => { if (song === s) fn(); }, ms));
+    s.done = () => { setEmotion(convo ? 'lyssnar' : 'neutral'); hideVisa(); resolve(); };
+    setEmotion('sjunger');
+    const finish = () => { if (song === s){ song = null; visaEl.classList.remove('sing'); s.done(); } };
+
+    if (def.melodi || def.egen){
+      // Melodi: Frank-Y spelar och nynnar
+      const beat = 60 / (def.bpm || 100);
+      const lines = def.egen ? def.egen.map(r => ({text: safeText(r.text), notes: parseMelody(r.noter)[0] || []}))
+                             : parseMelody(def.melodi).map(n => ({text: '', notes: n}));
+      let t = a.currentTime + .4, ms = 400;
+      lines.forEach((line, i) => {
+        const startMs = ms;
+        after(startMs, () => showSongLine(def.emoji, line.text || (i === 0 ? def.titel : '🎵 Sjung med! 🎤'), !line.text && i > 0));
+        line.notes.forEach(n => { songTone(bus, t, n.f, n.beats * beat * .95); t += n.beats * beat; ms += n.beats * beat * 1000; });
+        t += beat * .5; ms += beat * 500;
+      });
+      after(ms + 300, finish);
+    } else {
+      // Sjung-med: visa raderna, familjen sjunger. Tryck på skärmen = nästa rad.
+      const p = spec.namn ? (/ och |,|&/.test(spec.namn) ? 'de' : 'du') : 'han';
+      const rader = def.rader(p);
+      let i = -1;
+      const step = () => {
+        s.timers.forEach(clearTimeout); s.timers = [];
+        i++;
+        if (i < rader.length){
+          showSongLine(def.emoji, (i === 0 && spec.namn ? safeText(spec.namn) + '\n' : '') + rader[i]);
+          sound('glad', {soft: true});
+          after(def.sek * 1000 + (i === 0 && spec.namn ? 1500 : 0), step);
+        } else if (def.hurra){
+          showSongLine('🎉🎂🎉', 'HURRA! HURRA!\nHURRA! HURRA!');
+          setEmotion('skrattar');
+          fetchVoice('Hurra! Hurra! Hurra! Hurra!').then(buf => {
+            if (song !== s) return;
+            if (buf) playRobotVoice(buf).catch(() => {}); else speak('Hurra! Hurra! Hurra! Hurra!');
+          });
+          sound('stolt');
+          after(5000, finish);
+        } else finish();
+      };
+      s.next = step;
+      step();
+    }
+  });
+}
+
 async function speakParts(delar){
   talking = true; interrupted = false;
   convoTalking(true);
@@ -1233,6 +1422,7 @@ async function speakParts(delar){
     let ok = false;
     if (buf){ try { await playRobotVoice(buf); ok = true; } catch(e){} }
     if (!ok && !interrupted) await speak(d['säg']);
+    if (d['sång'] && !interrupted){ talking = true; await playSong(d['sång']); }
     if (i < delar.length - 1 && !interrupted) await sleep(220);
   }
   talking = false;
@@ -1284,7 +1474,7 @@ const bargeBtn = addBtn('✋ Avbryt med rösten', () => { bargeOn = !bargeOn; st
 bargeBtn.classList.toggle('on', bargeOn);
 
 // ---------- Öppet gränssnitt ----------
-window.robot = { setEmotion, play, lookAt, speak, think, listen, sound, showVisa, hideVisa,
+window.robot = { setEmotion, play, lookAt, speak, think, listen, sound, showVisa, hideVisa, playSong, stopSong,
   emotions: Object.keys(EXPR), get emotion(){ return emotion; } };
 </script>
 </body>
