@@ -467,7 +467,7 @@ function render(t, now){
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
 
-  const bw = Math.min(W * .25, H * .42) * (1 - lay * .56), bh = bw * 1.15;
+  const bw = Math.min(W * .25, H * .42) * (1 - lay * .56) * (1 - costumeAmt * .5), bh = bw * 1.15;
   const breathe = 1 + Math.sin(t * 1.7) * .012;
   const age = (now - changeAt) / 1000;
   const sq = Math.exp(-age * 6) * Math.sin(age * 20) * .1;          // studs vid nytt uttryck
@@ -485,7 +485,7 @@ function render(t, now){
   const oy = g.y * bh * .4 + Math.sin(t * 6) * cur.spin * bh * .4;
   const gap = bw * .97;
 
-  const fcx = W/2, fcy = H/2 - lay * H * .33 + bounceY;
+  const fcx = W/2, fcy = H/2 - lay * H * .33 + bounceY - costumeAmt * H * .01;
   if (cur.bg > .01){   // superkänsla: hela skärmen färgas och pulserar
     const pulse = .75 + .25 * Math.sin(t * (emotion === 'rasande' ? 9 : 2.5));
     const bgG = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * .75);
@@ -506,6 +506,7 @@ function render(t, now){
   ctx.rotate((cur.roll + g.x * 3 + Math.sin(t * 2.2) * cur.sway * 8) * Math.PI / 180);   // lutar huvudet åt det håll den tittar
   // ögat åt det håll den tittar blir lite större (perspektiv)
   const pv = .14;
+  if (costumeAmt > .01) withCostume(() => drawFarfarBak(t, gap, ox, oy, bw, bh));
   const lidAdd = squint + drowse;
   drawEye(-gap + ox, oy, cur.L, -1, bw, bh, sx * (1 - g.x*pv), sy * (1 - g.x*pv*.6), t, {squeeze: sqz('L'), lidAdd, glow});
   drawEye( gap + ox, oy, cur.R,  1, bw, bh, sx * (1 + g.x*pv), sy * (1 + g.x*pv*.6), t, {squeeze: sqz('R'), lidAdd, glow});
@@ -519,10 +520,161 @@ function render(t, now){
       ctx.beginPath(); ctx.ellipse(bx, by, r, r*.6, 0, 0, Math.PI*2); ctx.fill();
     }
   }
+  if (costumeAmt > .01) withCostume(() => drawFarfar(t, gap, ox, oy, bw, bh));
   emitParticles(now, gap, ox, oy, bw, bh);
   drawParticles(bw);
   ctx.restore();
 }
+
+// ============================================================
+//  HEMLIGT LÄGE: FARFAR 👴🇹🇳
+//  "Frank-Y, kan du prata som farfar?" → chechia, skägg och tunisisk röst.
+//  Han förstår svenska men svarar på tunisiska. "Prata svenska igen" → tillbaka.
+// ============================================================
+let costume = null, costumeAmt = 0;
+function withCostume(fn){
+  ctx.save(); ctx.globalAlpha = Math.min(1, costumeAmt * 1.2);
+  const sc = .85 + .15 * costumeAmt; ctx.scale(sc, sc);
+  fn(); ctx.restore();
+}
+function costumeBurst(){
+  // glittervirvel runt ansiktet
+  const bw = Math.min(W * .25, H * .42);
+  for (let i = 0; i < 26; i++){
+    const an = i / 26 * Math.PI * 2, r = bw * rand(.9, 1.9);
+    parts.push({k:'glitter', x: Math.cos(an) * r, y: Math.sin(an) * r * .7, vx: Math.cos(an) * bw * .6, vy: Math.sin(an) * bw * .4, life: rand(.5, 1.1), s: rand(.6, 1.3)});
+  }
+  [0, .09, .18, .3].forEach((d, i) => chirp([[0, 700 * Math.pow(1.26, i)], [.08, 760 * Math.pow(1.26, i)]], {delay: d, vol: .1}));
+}
+function setCostume(name){
+  if (costume === name) return;
+  costume = name; costumeBurst(); changeAt = performance.now();
+}
+// Farfar-läge: tunisisk chechia, yviga bryn, fylligt gråvitt skägg och en mun som pratar
+let feltDots = null;
+function drawFarfarBak(t, gap, ox, oy, bw, bh){
+  ctx.save();
+  const hw = gap + bw * .72;                  // halva mössans bredd
+  const base = oy - bh * .9, top = oy - bh * 1.7;
+  // --- chechia: rund filtmössa ---
+  const capPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(ox - hw, base);
+    ctx.bezierCurveTo(ox - hw * 1.02, top + bh * .25, ox - hw * .7, top, ox, top);
+    ctx.bezierCurveTo(ox + hw * .7, top, ox + hw * 1.02, top + bh * .25, ox + hw, base);
+    ctx.bezierCurveTo(ox + hw * .5, base + bh * .16, ox - hw * .5, base + bh * .16, ox - hw, base);
+    ctx.closePath();
+  };
+  const g1 = ctx.createRadialGradient(ox - hw * .3, top + bh * .25, bw * .1, ox, base, hw * 1.3);
+  g1.addColorStop(0, '#c0262c'); g1.addColorStop(.55, '#94141b'); g1.addColorStop(1, '#4a070b');
+  ctx.save(); ctx.shadowColor = 'rgba(200,40,40,.35)'; ctx.shadowBlur = bw * .2; ctx.fillStyle = g1; capPath(); ctx.fill(); ctx.restore();
+  // filtstruktur
+  ctx.save(); capPath(); ctx.clip();
+  if (!feltDots){ feltDots = []; for (let i = 0; i < 160; i++) feltDots.push([Math.random() * 2 - 1, Math.random(), Math.random()]); }
+  for (const [fx, fy, fa] of feltDots){
+    ctx.fillStyle = fa > .5 ? 'rgba(255,120,110,.10)' : 'rgba(60,0,0,.12)';
+    ctx.fillRect(ox + fx * hw, top + fy * (base - top + bh * .15), bw * .02, bw * .02);
+  }
+  // glansig rand nertill
+  ctx.strokeStyle = 'rgba(90,5,10,.55)'; ctx.lineWidth = bh * .07;
+  ctx.beginPath(); ctx.moveTo(ox - hw, base - bh * .03); ctx.bezierCurveTo(ox - hw * .5, base + bh * .12, ox + hw * .5, base + bh * .12, ox + hw, base - bh * .03); ctx.stroke();
+  // ljusreflex
+  const hl = ctx.createLinearGradient(ox - hw, top, ox - hw * .2, base);
+  hl.addColorStop(0, 'rgba(255,200,190,.28)'); hl.addColorStop(1, 'rgba(255,200,190,0)');
+  ctx.fillStyle = hl; ctx.fillRect(ox - hw, top, hw * .9, base - top);
+  ctx.restore();
+  // --- tofs av svarta trådar som svänger ---
+  const sw = Math.sin(t * 2.1) * bw * .07, tx = ox, ty = top + bh * .01;
+  ctx.strokeStyle = '#141212'; ctx.lineCap = 'round';
+  ctx.fillStyle = '#1b1818'; ctx.beginPath(); ctx.ellipse(tx, ty, bw * .07, bh * .035, 0, 0, Math.PI * 2); ctx.fill();
+  for (let i = 0; i < 11; i++){
+    const f = i / 10, len = bh * (.62 + Math.sin(i * 1.7) * .06);
+    ctx.lineWidth = bw * .028;
+    ctx.beginPath(); ctx.moveTo(tx, ty);
+    ctx.quadraticCurveTo(tx + hw * (.5 + f * .15) + sw * .5, ty - bh * .04, tx + hw * (.82 + f * .14) + sw, ty + len * .9);
+    ctx.stroke();
+  }
+  // --- polisonger som binder ihop mössa och skägg ---
+  ctx.fillStyle = '#5c544d';
+  for (const s of [-1, 1]){
+    ctx.beginPath();
+    ctx.moveTo(ox + s * hw * .97, base - bh * .02);
+    ctx.quadraticCurveTo(ox + s * (gap + bw * .92), oy - bh * .2, ox + s * (gap + bw * .82), oy + bh * .45);
+    ctx.lineTo(ox + s * (gap + bw * .62), oy + bh * .4);
+    ctx.quadraticCurveTo(ox + s * (gap + bw * .74), oy - bh * .2, ox + s * hw * .86, base + bh * .04);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawFarfar(t, gap, ox, oy, bw, bh){
+  ctx.save();
+  const talk = Math.max(cur.talk, talkAmt), tvv = voiceLevel >= 0 ? voiceLevel : .5 + .5 * Math.sin(t * 12);
+  // yviga gråvita ögonbryn som lyfts lite när han pratar
+  for (const s of [-1, 1]){
+    const by = oy - bh * .66 - talk * tvv * bh * .05 + Math.sin(t * 2.2 + s) * bh * .012;
+    for (let i = 0; i < 10; i++){
+      const f = i / 9, x = s * gap + ox + (f - .5) * bw * 1.0 * -s;
+      ctx.fillStyle = i % 3 === 0 ? 'rgba(200,195,186,.97)' : 'rgba(92,84,77,.98)';
+      ctx.beginPath(); ctx.ellipse(x, by - Math.sin(f * Math.PI) * bh * .08 + (f > .85 ? bh * .05 : 0), bw * .11, bh * .06, s * (f - .5) * .9 + .2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // fylligt skägg
+  const sideX = gap + bw * .82, cheek = oy + bh * .42, chin = oy + bh * 1.42;
+  const beard = () => {
+    ctx.beginPath();
+    ctx.moveTo(ox - sideX, cheek);
+    ctx.bezierCurveTo(ox - sideX * 1.04, chin - bh * .35, ox - bw * .75, chin, ox, chin);
+    ctx.bezierCurveTo(ox + bw * .75, chin, ox + sideX * 1.04, chin - bh * .35, ox + sideX, cheek);
+    ctx.bezierCurveTo(ox + sideX * .7, oy + bh * .62, ox + bw * .55, oy + bh * .8, ox, oy + bh * .8);
+    ctx.bezierCurveTo(ox - bw * .55, oy + bh * .8, ox - sideX * .7, oy + bh * .62, ox - sideX, cheek);
+    ctx.closePath();
+  };
+  const bg = ctx.createLinearGradient(0, cheek, 0, chin);
+  bg.addColorStop(0, '#6b625a'); bg.addColorStop(.6, '#4f4842'); bg.addColorStop(1, '#3a3430');
+  ctx.save(); ctx.shadowColor = 'rgba(255,215,170,.28)'; ctx.shadowBlur = bw * .25; ctx.fillStyle = bg; beard(); ctx.fill(); ctx.restore();
+  // skäggstrån
+  ctx.save(); beard(); ctx.clip();
+  ctx.lineWidth = bw * .02;
+  for (let i = 0; i < 34; i++){
+    ctx.strokeStyle = i % 3 ? 'rgba(205,198,188,.45)' : 'rgba(30,26,24,.4)';   // grå strån
+    const f = i / 33, x = ox + (f - .5) * sideX * 1.9, y0 = oy + bh * (.85 + Math.abs(f - .5) * -.3);
+    ctx.beginPath(); ctx.moveTo(x, y0);
+    ctx.quadraticCurveTo(x + Math.sin(i) * bw * .06, y0 + bh * .3, x + (f - .5) * bw * .25, y0 + bh * .6); ctx.stroke();
+  }
+  ctx.restore();
+  // munnen – öppnar sig när han pratar
+  const open = .06 + talk * tvv * .16;
+  const my0 = oy + bh * .9;
+  ctx.fillStyle = '#4a1517';
+  ctx.beginPath(); ctx.moveTo(ox - bw * .42, my0);
+  ctx.quadraticCurveTo(ox, my0 + bh * (open + .22), ox + bw * .42, my0);
+  ctx.quadraticCurveTo(ox, my0 + bh * .04, ox - bw * .42, my0); ctx.fill();
+  ctx.fillStyle = '#f5f0e6';
+  ctx.beginPath(); ctx.moveTo(ox - bw * .36, my0 + bh * .02); ctx.quadraticCurveTo(ox, my0 + bh * .1, ox + bw * .36, my0 + bh * .02);
+  ctx.quadraticCurveTo(ox, my0 + bh * .06, ox - bw * .36, my0 + bh * .02); ctx.fill();
+  // tunga
+  ctx.fillStyle = '#c65a5e';
+  ctx.beginPath(); ctx.ellipse(ox, my0 + bh * (open + .12), bw * .16, bh * (.03 + open * .25), 0, 0, Math.PI); ctx.fill();
+  // svängd mustasch som vickar
+  const my = oy + bh * .82, wob = Math.sin(t * 3) * bw * .02 + talk * tvv * bw * .03;
+  for (const s of [-1, 1]){
+    const mg = ctx.createLinearGradient(ox, my - bh * .15, ox, my + bh * .1);
+    mg.addColorStop(0, '#9a928a'); mg.addColorStop(1, '#4a433d'); ctx.fillStyle = mg;
+    ctx.beginPath(); ctx.moveTo(ox, my - bh * .12);
+    ctx.bezierCurveTo(ox + s * bw * .35, my - bh * .26, ox + s * bw * .8, my - bh * .12, ox + s * (bw * .92 + wob), my - bh * .02);
+    ctx.bezierCurveTo(ox + s * (bw * 1.05 + wob), my - bh * .1, ox + s * (bw * 1.08 + wob), my - bh * .2, ox + s * (bw * .98 + wob), my - bh * .24);   // svängd spets
+    ctx.bezierCurveTo(ox + s * (bw * 1.15 + wob), my - bh * .16, ox + s * (bw * 1.1 + wob), my + bh * .06, ox + s * bw * .85, my + bh * .08);
+    ctx.bezierCurveTo(ox + s * bw * .5, my + bh * .12, ox + s * bw * .2, my + bh * .04, ox, my + bh * .02);
+    ctx.closePath(); ctx.fill();
+  }
+  // liten rund näsa
+  const ng = ctx.createRadialGradient(ox - bw * .05, oy + bh * .5, 0, ox, oy + bh * .56, bw * .24);
+  ng.addColorStop(0, rgb(mixWhite(cur.color, .35))); ng.addColorStop(1, rgb(cur.color, .9));
+  ctx.save(); ctx.shadowColor = rgb(cur.color, .5); ctx.shadowBlur = bw * .15;
+  ctx.fillStyle = ng; ctx.beginPath(); ctx.ellipse(ox, oy + bh * .58, bw * .2, bh * .15, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  ctx.restore();
+}
+
 
 // ============================================================
 //  SMÅ EFFEKTER: tårar, svett, Zzz, hjärtan, glitter, frågetecken
@@ -614,6 +766,8 @@ function frame(now){
 function step(now){
   const dt = Math.min(.05, (now - last) / 1000); last = now;
   lerpObj(cur, target, 1 - Math.exp(-dt * target.speed));
+  costumeAmt += ((costume ? 1 : 0) - costumeAmt) * (1 - Math.exp(-dt * 4));
+  if (costumeAmt > .01){ const warm = [255, 186, 105]; for (let i = 0; i < 3; i++) cur.color[i] += (warm[i] - cur.color[i]) * costumeAmt * .5; }
   talkAmt += ((speaking ? 1 : 0) - talkAmt) * (1 - Math.exp(-dt * 10));
   lay += ((visaOn ? 1 : 0) - lay) * (1 - Math.exp(-dt * 6));
   if (visaOn && now - visaShownAt > 90000 && !talking && !busy) hideVisa();   // försvinner efter en stund utan aktivitet
@@ -765,6 +919,7 @@ function lightTick(now){
 // ---------- Uttråkad när ingen är där: tittar på "klockan", slumrar till ----------
 let nextBored = performance.now() + 15000;
 function boredTick(now){
+  if (costume && now - lastActivity > 10 * 60000) setCostume(null);   // farfar går hem efter en lång stund
   if (now < nextBored) return;
   nextBored = now + rand(15000, 30000);
   if (face.visible || busy || talking || listening || convo || tempActive || visaOn) return;
@@ -1007,8 +1162,8 @@ function speak(text){
     const done = () => { if (finished) return; finished = true; speaking = false; res(); };
     const go = () => {
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'sv-SE';
-      if (svVoice && !voiceFailed) u.voice = svVoice;
+      u.lang = costume ? 'ar-TN' : 'sv-SE';
+      if (svVoice && !voiceFailed && !costume) u.voice = svVoice;
       u.pitch = VOICE.pitch; u.rate = VOICE.rate; u.volume = 1;
       u.onstart = () => { started = true; speaking = true; };
       u.onend = done;
@@ -1368,7 +1523,7 @@ function addMinnen(list){
 }
 function kontext(){
   const nu = new Date().toLocaleString('sv-SE', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'});
-  return {nu, familj: familj.slice(0, 2500), minnen: minnen.map(m => m.t)};
+  return {nu, familj: familj.slice(0, 2500), minnen: minnen.map(m => m.t), läge: costume || 'normal'};
 }
 
 // Liten ruta för inställningar som behöver mer plats
@@ -1489,6 +1644,8 @@ async function think(text, opts = {}){
   if (!text || busy) return;
   if (!serverUrl || !password){ status('Fyll i server-adress och lösenord under ⚙'); panel.classList.add('open'); return; }
   busy = true; micBtn.classList.add('busy'); lastActivity = performance.now();
+  if (/prata (som|med) farfar|farfars röst/i.test(text)) setCostume('farfar');            // förvandlingen startar direkt
+  else if (costume && /(prata|snacka|tala) svenska/i.test(text)) setCostume(null);
   if (opts.react){
     // visa en känsla direkt, tänk sen
     setEmotion(opts.react); sound(opts.react, {quiet: true, extra: true});
@@ -1502,6 +1659,8 @@ async function think(text, opts = {}){
     if (!res.ok) throw new Error((res.data.fel || ('fel ' + res.status)) + (res.data.detalj ? ' – ' + res.data.detalj : ''));
     delar = res.data.delar;
     if (res.data.minns) addMinnen(res.data.minns);
+    if (res.data['läge'] === 'farfar') setCostume('farfar');
+    else if (res.data['läge'] === 'normal' && costume) setCostume(null);
     // äldre hjärna (ett svar, en känsla) funkar också
     if (!Array.isArray(delar)) delar = [{'säg': res.data['säg'], 'känsla': res.data['känsla']}];
     delar = delar.filter(d => d && d['säg']);
@@ -1540,7 +1699,7 @@ async function fetchVoice(text){
     const r = await fetch(serverUrl + '/rost', {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'X-Robot-Password': password},
-      body: JSON.stringify({text}),
+      body: JSON.stringify(costume ? {text, röst: costume} : {text}),
     });
     if (r.status === 501){ azureVoice = false; return null; }   // ingen Azure – fråga inte igen
     if (!r.ok) return null;
