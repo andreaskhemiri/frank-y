@@ -29,6 +29,20 @@
         opacity:0;transform:translateY(24px);transition:opacity .45s,transform .45s;pointer-events:none;z-index:1;
         color:#fff;font-family:ui-rounded,"SF Pro Rounded",system-ui,-apple-system,sans-serif;font-weight:700;text-align:center}
   #visa.on{opacity:1;transform:none}
+  #sheet{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;z-index:10;padding:16px;
+         font-family:system-ui,-apple-system,sans-serif;color:#fff}
+  #sheet.open{display:flex}
+  #sheet .box{background:#16161f;border-radius:18px;width:min(640px,100%);max-height:100%;display:flex;flex-direction:column;gap:10px;padding:16px;box-sizing:border-box}
+  #sheet h3{margin:0;font-size:18px}
+  #sheet p{margin:0;color:#aab;font-size:14px}
+  #sheet .body{overflow:auto;flex:1;min-height:80px}
+  #sheet textarea{width:100%;min-height:180px;box-sizing:border-box;border:0;border-radius:12px;padding:12px;background:#24243a;color:#fff;font-size:16px;font-family:inherit;resize:vertical}
+  #sheet .mem{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #2a2a3a;font-size:15px}
+  #sheet .mem span{flex:1}
+  #sheet button{border:0;border-radius:999px;padding:10px 16px;background:#2a2a38;color:#fff;font-size:15px}
+  #sheet button.primary{background:#5ad8ff;color:#000}
+  #sheet .mem button{padding:6px 10px;background:#3a2430}
+  #sheet .row{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
   #visa .inner{display:flex;flex-direction:column;align-items:center;gap:1.6vh;transform-origin:center}
   #visa .bild{font-size:min(17vh,13vw);line-height:1.1;letter-spacing:.05em}
   #visa .text{font-size:min(11vh,8vw);line-height:1.1;color:var(--vc,#5ad8ff);text-shadow:0 0 18px rgba(90,216,255,.35)}
@@ -51,6 +65,7 @@
 <button id="gear" aria-label="Inställningar">⚙</button>
 <div id="visa"><div class="inner"></div></div>
 <div id="panel"></div>
+<div id="sheet"><div class="box"></div></div>
 <button id="mic" aria-label="Prata med Frank-Y">🎤</button>
 
 <script>
@@ -932,6 +947,69 @@ function askText(){
   if (t && t.trim()) think(t);
 }
 
+// ============================================================
+//  FAMILJ OCH MINNE – allt sparas bara i den här iPhonen
+// ============================================================
+let familj = String(store.get('familj', ''));
+let minnen = (store.get('minnen', []) || []).filter(m => m && m.t);
+const saveMinnen = () => store.set('minnen', minnen);
+function addMinnen(list){
+  if (!Array.isArray(list)) return;
+  for (const raw of list){
+    const t = String(raw || '').trim().slice(0, 160);
+    if (!t) continue;
+    const key = t.toLowerCase();
+    if (minnen.some(m => m.t.toLowerCase() === key)) continue;   // inga dubbletter
+    minnen.push({t, d: Date.now()});
+  }
+  if (minnen.length > 80) minnen = minnen.slice(-80);           // de äldsta försvinner först
+  saveMinnen();
+}
+function kontext(){
+  const nu = new Date().toLocaleString('sv-SE', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'});
+  return {nu, familj: familj.slice(0, 2500), minnen: minnen.map(m => m.t)};
+}
+
+// Liten ruta för inställningar som behöver mer plats
+const sheet = document.getElementById('sheet'), sheetBox = sheet.querySelector('.box');
+function openSheet(build){
+  sheetBox.innerHTML = ''; build(sheetBox);
+  panel.classList.remove('open'); sheet.classList.add('open');
+}
+const closeSheet = () => sheet.classList.remove('open');
+sheet.addEventListener('pointerdown', e => { if (e.target === sheet) closeSheet(); });
+function el(tag, props, parent){ const x = Object.assign(document.createElement(tag), props || {}); if (parent) parent.appendChild(x); return x; }
+function openFamilj(){
+  openSheet(b => {
+    el('h3', {textContent: '👨‍👩‍👦 Familjen'}, b);
+    el('p', {textContent: 'Skriv vilka som bor här: namn, födelsedag och vad de gillar. Sparas bara i den här telefonen.'}, b);
+    const ta = el('textarea', {value: familj, placeholder: 'T.ex.\nElsa, född 3 maj 2018. Gillar hästar och att rita.'}, el('div', {className: 'body'}, b));
+    const row = el('div', {className: 'row'}, b);
+    el('button', {textContent: 'Avbryt', onclick: closeSheet}, row);
+    el('button', {className: 'primary', textContent: 'Spara', onclick: () => { familj = ta.value.trim(); store.set('familj', familj); closeSheet(); status('Familjen är sparad', 3000); sound('glad'); }}, row);
+  });
+}
+function openMinne(){
+  openSheet(b => {
+    el('h3', {textContent: '🧠 Vad minns Frank-Y?'}, b);
+    el('p', {textContent: minnen.length ? 'Tryck ✕ för att få honom att glömma något. Sparas bara i den här telefonen.' : 'Han minns inget ännu. Prata med honom så lär han sig!'}, b);
+    const body = el('div', {className: 'body'}, b);
+    const draw = () => {
+      body.innerHTML = '';
+      minnen.slice().reverse().forEach(m => {
+        const r = el('div', {className: 'mem'}, body);
+        el('span', {textContent: m.t}, r);
+        el('button', {textContent: '✕', onclick: () => { minnen = minnen.filter(x => x !== m); saveMinnen(); draw(); }}, r);
+      });
+    };
+    draw();
+    const row = el('div', {className: 'row'}, b);
+    el('button', {textContent: '+ Lägg till', onclick: () => { const t = window.prompt('Vad ska Frank-Y komma ihåg?'); if (t && t.trim()){ addMinnen([t]); draw(); } }}, row);
+    el('button', {textContent: 'Glöm allt', onclick: () => { if (window.confirm('Ska Frank-Y glömma allt han minns?')){ minnen = []; saveMinnen(); draw(); } }}, row);
+    el('button', {className: 'primary', textContent: 'Klar', onclick: closeSheet}, row);
+  });
+}
+
 // ---------- Tänk (fråga hjärnan) ----------
 async function think(text){
   text = String(text || '').trim();
@@ -943,9 +1021,10 @@ async function think(text){
   history.push({role: 'user', content: text});
   let delar;
   try {
-    const res = await callBrain({messages: history.slice(-12)});
+    const res = await callBrain({messages: history.slice(-12), kontext: kontext()});
     if (!res.ok) throw new Error((res.data.fel || ('fel ' + res.status)) + (res.data.detalj ? ' – ' + res.data.detalj : ''));
     delar = res.data.delar;
+    if (res.data.minns) addMinnen(res.data.minns);
     // äldre hjärna (ett svar, en känsla) funkar också
     if (!Array.isArray(delar)) delar = [{'säg': res.data['säg'], 'känsla': res.data['känsla']}];
     delar = delar.filter(d => d && d['säg']);
@@ -1132,6 +1211,8 @@ addBtn('🧪 Testa hjärnan', async () => {
 });
 addBtn('💬 Skriv', askText);
 addBtn('🔊 Testa rösten', () => { if (!talking) speakParts([{'säg': 'Hej! Jag heter Frank-Y. Vad heter du?', 'känsla': 'glad'}]); });
+addBtn('👨‍👩‍👦 Familj', openFamilj);
+addBtn('🧠 Minne', openMinne);
 addBtn('🧹 Glöm samtalet', () => { history = []; status('Samtalet är glömt'); });
 const sfxBtn = addBtn('🎵 Småljud', () => { smaljud = !smaljud; store.set('sfx', smaljud); sfxBtn.classList.toggle('on', smaljud); if (smaljud) sound('glad'); });
 sfxBtn.classList.toggle('on', smaljud);
