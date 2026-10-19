@@ -84,33 +84,34 @@
 // Per öga: w/h = storlek, r = rundhet, y = höjdläge,
 // lid = övre ögonlock (0-1), tilt = lutning (+ arg, - ledsen),
 // bot = undre lock, smile = glad båge underifrån, heart = hjärtöga
-const E = o => Object.assign({w:1,h:1,r:.38,y:0,lid:0,tilt:0,bot:0,smile:0,heart:0}, o||{});
+// bA/bY/bT/bC = ögonbryn: synlighet, höjd, lutning (+ arg, - ledsen), böj
+const E = o => Object.assign({w:1,h:1,r:.38,y:0,lid:0,tilt:0,bot:0,smile:0,heart:0,bA:0,bY:0,bT:0,bC:.18}, o||{});
 // jiggle = skakskratt, shiver = darrar, sway = vaggar, spin = ögonen går runt
 const G = {color:[90,220,255], blush:0, roll:0, bounce:0, gx:0, gy:0, talk:0, speed:8, jiggle:0, shiver:0, sway:0, spin:0};
 
 const EXPR = {
   neutral:  {L:{}},
   glad:     {L:{h:.95,smile:.55}, color:[110,235,255], blush:.55, bounce:.3},
-  ledsen:   {L:{h:.9,lid:.32,tilt:-.45,y:.08}, color:[90,140,255], gy:.4, speed:4},
-  förvånad: {L:{w:1.12,h:1.22,r:.5}, color:[150,240,255], gy:-.1, speed:14},
-  arg:      {L:{h:.9,lid:.32,tilt:.5}, color:[255,90,80], speed:10},
+  ledsen:   {L:{h:.9,lid:.32,tilt:-.45,y:.08,bA:1,bY:.03,bT:-.5,bC:.1}, color:[90,140,255], gy:.4, speed:4},
+  förvånad: {L:{w:1.12,h:1.22,r:.5,bA:1,bY:.06,bC:.38}, color:[150,240,255], gy:-.1, speed:14},
+  arg:      {L:{h:.9,lid:.32,tilt:.5,bA:1,bY:-.06,bT:.55,bC:.04}, color:[255,90,80], speed:10},
   sömnig:   {L:{lid:.62,bot:.08,tilt:-.1}, color:[80,160,210], gy:.25, speed:2.5},
   kär:      {L:{heart:1}, color:[255,105,170], blush:1, bounce:.15},
-  nyfiken:  {L:{w:1.05,h:1.15}, R:{h:.82,lid:.2,tilt:.15}, roll:-8, color:[100,230,255]},
-  tänker:   {L:{lid:.22,tilt:-.15}, R:{lid:.12,h:.95}, gx:.55, gy:-.55, color:[120,200,255]},
+  nyfiken:  {L:{w:1.05,h:1.15,bA:1,bY:.07,bC:.32}, R:{h:.82,lid:.2,tilt:.15,bA:.6,bY:-.02,bT:.1,bC:.08}, roll:-8, color:[100,230,255]},
+  tänker:   {L:{lid:.22,tilt:-.15,bA:.8,bY:.06,bT:-.1,bC:.25}, R:{lid:.12,h:.95,bA:.5,bY:.04,bC:.15}, gx:.55, gy:-.55, color:[120,200,255]},
   lyssnar:  {L:{w:1.05,h:1.08,r:.45}, roll:6, color:[100,240,225]},
   pratar:   {L:{smile:.2}, color:[100,230,255], talk:1},
   // ---- fler uttryck ----
   blunda:   {L:{lid:1}, color:[90,220,255], speed:6},
   skrattar: {L:{h:.9,smile:.72}, color:[120,240,255], blush:.6, bounce:.6, jiggle:1, speed:12},
   blinka:   {L:{h:.95,smile:.2}, R:{h:.85,smile:.9}, color:[110,235,255], blush:.35, roll:-5},
-  rädd:     {L:{w:.85,h:1.12,r:.5}, color:[175,210,255], shiver:1, gy:.1, speed:14},
-  förvirrad:{L:{h:1.1}, R:{h:.8,lid:.3,tilt:-.3}, color:[160,200,255], roll:10, sway:1},
+  rädd:     {L:{w:.85,h:1.12,r:.5,bA:1,bY:.05,bT:-.38,bC:.22}, color:[175,210,255], shiver:1, gy:.1, speed:14},
+  förvirrad:{L:{h:1.1,bA:1,bY:.06,bT:-.1,bC:.32}, R:{h:.8,lid:.3,tilt:-.3,bA:1,bY:-.03,bT:.28,bC:.05}, color:[160,200,255], roll:10, sway:1},
   blyg:     {L:{h:.85,lid:.15,smile:.25}, color:[140,215,255], blush:1, gx:.5, gy:.45, roll:8, speed:5},
-  stolt:    {L:{h:.95,lid:.35,tilt:-.05,smile:.3}, color:[120,240,220], gy:-.25, roll:-4},
-  uttråkad: {L:{h:.95,lid:.5}, color:[110,170,200], gx:-.5, gy:.1, speed:4},
+  stolt:    {L:{h:.95,lid:.35,tilt:-.05,smile:.3,bA:.7,bY:.07,bT:-.12,bC:.2}, color:[120,240,220], gy:-.25, roll:-4},
+  uttråkad: {L:{h:.95,lid:.5,bA:.8,bY:-.05,bC:0}, color:[110,170,200], gx:-.5, gy:.1, speed:4},
   yr:       {L:{}, color:[200,200,255], spin:1, sway:.6, speed:6},
-  busig:    {L:{lid:.22,tilt:.12,smile:.45}, R:{lid:.05,smile:.45}, color:[150,255,200], roll:6, gx:.3},
+  busig:    {L:{lid:.22,tilt:.12,smile:.45,bA:1,bY:.02,bT:.18,bC:.1}, R:{lid:.05,smile:.45,bA:1,bY:.06,bT:-.12,bC:.28}, color:[150,255,200], roll:6, gx:.3},
   sjunger:  {L:{h:.95,smile:.45}, color:[130,240,255], blush:.4, bounce:1, sway:.7, speed:10},
 };
 for (const n in EXPR) {
@@ -187,29 +188,40 @@ function lerpObj(a, b, k){
 }
 
 // ---------- Blinkning ----------
-let blink = 0, blinkStart = -1, blinkDur = .15, blinkAgain = false, nextBlink = performance.now() + 2000;
-function startBlink(){
+// Olika sorters blinkningar: vanlig, halv, långsam "jag gillar dig"-blink (som katter) och nervös
+let blink = 0, blinkStart = -1, blinkDur = .15, blinkAmp = 1, blinkHold = 0, blinkAgain = 0, nextBlink = performance.now() + 2000;
+function startBlink(kind){
   if (blinkStart >= 0) return;
-  blinkStart = performance.now();
-  blinkDur = emotion === 'sömnig' ? .6 : rand(.12,.18);
+  blinkStart = performance.now(); blinkAmp = 1; blinkHold = 0;
+  if (kind === 'half'){ blinkAmp = .45; blinkDur = .2; }
+  else if (kind === 'slow'){ blinkDur = .75; blinkHold = .35; }
+  else if (kind === 'quick'){ blinkDur = .09; }
+  else blinkDur = emotion === 'sömnig' ? .6 : rand(.12, .18);
 }
 function updateBlink(now){
   if (blinkStart < 0 && now > nextBlink){
-    startBlink();
-    blinkAgain = Math.random() < .2;               // ibland dubbelblink
-    nextBlink = now + (emotion==='sömnig' ? rand(1500,3500) : rand(2000,6000));
+    const happy = face.visible && /^(glad|kär|neutral|lyssnar)$/.test(emotion);
+    if (emotion === 'rädd'){ startBlink('quick'); blinkAgain = 1 + (Math.random() * 2 | 0); }
+    else if (happy && Math.random() < .15) startBlink('slow');
+    else if (Math.random() < .15) startBlink('half');
+    else { startBlink(); blinkAgain = Math.random() < .2 ? 1 : 0; }   // ibland dubbelblink
+    nextBlink = now + (emotion === 'rädd' ? rand(700, 1600) : emotion === 'sömnig' ? rand(1500, 3500) : rand(2000, 6000));
   }
   if (blinkStart >= 0){
     const ph = (now - blinkStart) / 1000 / blinkDur;
     if (ph >= 1){
       blinkStart = -1; blink = 0;
-      if (blinkAgain){ blinkAgain = false; setTimeout(startBlink, 90); }
-    } else blink = ph < .4 ? ph/.4 : 1 - (ph-.4)/.6;
+      if (blinkAgain > 0){ blinkAgain--; setTimeout(() => startBlink(emotion === 'rädd' ? 'quick' : ''), 90); }
+    } else {
+      const c = .4 - blinkHold / 2, o = .4 + blinkHold / 2;           // stäng – håll – öppna
+      blink = blinkAmp * (ph < c ? ph / c : ph < o ? 1 : 1 - (ph - o) / (1 - o));
+    }
   }
 }
 
 // ---------- Blick ----------
-let g = {x:0,y:0}, gT = {x:0,y:0}, nextSacc = 0, glanceUntil = 0, nextGlance = 0;
+let g = {x:0,y:0}, gv = {x:0,y:0}, gT = {x:0,y:0}, nextSacc = 0, glanceUntil = 0, nextGlance = 0, pendGaze = null;
+let tiltG = {x:0, y:0};   // från telefonens lutning
 let jit = {x:0,y:0}, nextJit = 0;
 function lookAt(x, y, ms){
   gT = {x:clamp(x,-1,1), y:clamp(y,-1,1)}; glanceUntil = performance.now() + (ms||1200);
@@ -230,13 +242,18 @@ function updateGaze(now, dt){
     const amp = emotion === 'sömnig' ? .3 : 1, near = Math.random() < .6;
     const nx = (near ? rand(-.3,.3) : rand(-1,1)) * amp;
     const ny = (near ? rand(-.2,.2) : rand(-.7,.6)) * amp;
-    if (Math.hypot(nx-gT.x, ny-gT.y) > .8 && Math.random() < .35) startBlink();
-    gT = {x:nx, y:ny};
+    // förberedelse: kisa/blinka lite innan en stor blickrörelse
+    if (Math.hypot(nx - gT.x, ny - gT.y) > .6 && Math.random() < .5){
+      startBlink(Math.random() < .5 ? 'half' : ''); pendGaze = {x: nx, y: ny, at: now + 110};
+    } else gT = {x:nx, y:ny};
     nextSacc = now + rand(700,3500);
   }
-  const tx = clamp(gT.x + cur.gx, -1, 1), ty = clamp(gT.y + cur.gy, -1, 1);
-  const k = 1 - Math.exp(-dt * 16);
-  g.x += (tx - g.x) * k; g.y += (ty - g.y) * k;
+  if (pendGaze && now >= pendGaze.at){ gT = {x: pendGaze.x, y: pendGaze.y}; pendGaze = null; }
+  const tx = clamp(gT.x + cur.gx + tiltG.x, -1.2, 1.2), ty = clamp(gT.y + cur.gy + tiltG.y, -1.2, 1.2);
+  // fjäder: blicken skjuter lite förbi målet och gungar tillbaka – känns levande
+  const K = 170, C = 17;
+  gv.x += (K * (tx - g.x) - C * gv.x) * dt; gv.y += (K * (ty - g.y) - C * gv.y) * dt;
+  g.x += gv.x * dt; g.y += gv.y * dt;
 }
 
 // ---------- Kamera & ansiktsföljning (allt sker lokalt i telefonen) ----------
@@ -244,7 +261,8 @@ const MP = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
 const MODEL = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
 const video = document.getElementById('v');
 let detector = null, camOn = false, stream = null, lastDet = 0;
-let face = {x:0, y:0, size:0, visible:false, lastSeen:0, lostAt:0};
+let face = {x:0, y:0, size:0, visible:false, lastSeen:0, lostAt:0, count:0};
+let faceIdx = 0, nextFaceSwitch = 0;
 
 async function startCamera(){
   status('Startar kamera…');
@@ -280,9 +298,15 @@ function detect(now){
   try { res = detector.detectForVideo(video, now); } catch(e){ return; }
   const dets = (res && res.detections) || [];
   if (dets.length){
-    // välj största (närmaste) ansiktet
+    // flera barn: titta på dem i tur och ordning, annars på det närmaste ansiktet
     let best = dets[0];
     for (const d of dets) if (d.boundingBox.width > best.boundingBox.width) best = d;
+    if (dets.length > 1){
+      const sorted = dets.slice().sort((a, b) => a.boundingBox.originX - b.boundingBox.originX);
+      if (now > nextFaceSwitch){ faceIdx = Math.random() * sorted.length | 0; nextFaceSwitch = now + rand(2200, 5000); }
+      best = sorted[Math.min(faceIdx, sorted.length - 1)];
+    }
+    face.count = dets.length;
     const b = best.boundingBox, vw = video.videoWidth || 320, vh = video.videoHeight || 240;
     const xn = (b.originX + b.width/2) / vw, yn = (b.originY + b.height/2) / vh;
     const fx = clamp((.5 - xn) * 3.2 * (mirror ? -1 : 1), -1, 1);
@@ -336,11 +360,15 @@ function heartPath(c, s){
 const rgb = (c, a=1) => `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`;
 const mixWhite = (c, t) => c.map(v => v + (255 - v) * t);
 
-function drawEye(cx, cy, p, side, bw, bh, sx, sy, t){
+function drawEye(cx, cy, p, side, bw, bh, sx, sy, t, ex){
   const color = cur.color, inner = -side;               // inre sidan = mot mitten
-  const ew = bw * p.w * sx, eh = bh * p.h * sy * (1 - blink * .9);
+  const squeeze = ex ? ex.squeeze : 0;                  // petat på ögat
+  const ew = bw * p.w * sx * (1 + blink * .08 + squeeze * .12);   // blir lite bredare när det blinkar
+  const eh = bh * p.h * sy * (1 - blink * .9) * (1 - squeeze * .8);
+  const lidX = ex ? ex.lidAdd : 0;
   const pad = Math.max(bw, bh) * 1.0, size = pad * 2;
-  const px = Math.ceil(size * DPR);
+  const px = Math.max(2, Math.ceil(size * DPR));
+  if (!(size > 1)) return;                              // inget att rita (fönstret har ingen storlek än)
   if (oc.width !== px){ oc.width = px; oc.height = px; }
   octx.setTransform(DPR, 0, 0, DPR, pad*DPR, pad*DPR);
   octx.globalCompositeOperation = 'source-over';
@@ -359,8 +387,9 @@ function drawEye(cx, cy, p, side, bw, bh, sx, sy, t){
     octx.globalCompositeOperation = 'destination-out';
     octx.fillStyle = '#000';
     // övre ögonlock med lutning
-    if (p.lid > .005 || Math.abs(p.tilt) > .005){
-      const yMid = top + p.lid*h*1.06, dy = p.tilt * h * .4;   // *1.06 = inga glipor när ögat är helt stängt
+    const lid = Math.min(1, p.lid + (p.lid < .6 ? lidX : 0));
+    if (lid > .005 || Math.abs(p.tilt) > .005){
+      const yMid = top + lid*h*1.06, dy = p.tilt * h * .4;   // *1.06 = inga glipor när ögat är helt stängt
       const yAt = x => yMid + dy * (x * inner) / (w/2);
       octx.beginPath();
       octx.moveTo(-w, top - h); octx.lineTo(w, top - h);
@@ -372,13 +401,19 @@ function drawEye(cx, cy, p, side, bw, bh, sx, sy, t){
       const ry = h * .55, rx = w * .8, cyS = h/2 + ry - p.smile * h * .85;
       octx.beginPath(); octx.ellipse(0, cyS, rx, ry, 0, 0, Math.PI*2); octx.fill();
     }
-    // glans
+    // glans – flyttar sig lite mot blicken (djupkänsla) och tindrar när han är glad
     octx.globalCompositeOperation = 'source-atop';
     const m = Math.min(w, h);
+    const hx = -g.x * w * .06, hy = -g.y * h * .05;
+    const tw = /^(glad|kär|förvånad|stolt|sjunger)$/.test(emotion) ? 1 + Math.sin(t * 3.1 + side) * .1 : 1;
+    // mjukt reflexljus längst ner – som glas
+    const rim = octx.createRadialGradient(w*.1, h*.62, 0, w*.1, h*.62, w*.7);
+    rim.addColorStop(0, 'rgba(255,255,255,.16)'); rim.addColorStop(1, 'rgba(255,255,255,0)');
+    octx.fillStyle = rim; octx.fillRect(-w, -h, w*2, h*2);
     octx.fillStyle = 'rgba(255,255,255,.9)';
-    octx.beginPath(); octx.arc(-w*.2, -h*.2, m*.13, 0, Math.PI*2); octx.fill();
+    octx.beginPath(); octx.arc(-w*.2 + hx, -h*.2 + hy, m*.13*tw, 0, Math.PI*2); octx.fill();
     octx.fillStyle = 'rgba(255,255,255,.7)';
-    octx.beginPath(); octx.arc(-w*.04, -h*.32, m*.055, 0, Math.PI*2); octx.fill();
+    octx.beginPath(); octx.arc(-w*.04 + hx*1.4, -h*.32 + hy*1.4, m*.055*tw, 0, Math.PI*2); octx.fill();
   }
   if (heartS > .01){
     octx.globalCompositeOperation = 'source-over';
@@ -396,12 +431,26 @@ function drawEye(cx, cy, p, side, bw, bh, sx, sy, t){
 
   ctx.save();
   ctx.shadowColor = rgb(color, .55);
-  ctx.shadowBlur = Math.min(40, bw * .18) * DPR;
+  ctx.shadowBlur = Math.min(40, bw * .18) * DPR * (ex ? ex.glow : 1);
   ctx.drawImage(oc, cx - pad, cy + p.y*bh - pad, size, size);
+
+  // ögonbryn – syns bara när känslan behöver dem
+  if (p.bA > .02 && p.heart < .5){
+    const len = bw * p.w * sx * .78, th = bw * .085;
+    const by = cy + p.y*bh - bh * p.h * sy * .5 - bh * (.15 + p.bY) * (p.h > 1.1 ? .8 : 1) + blink * bh * .03;
+    const tiltY = p.bT * bh * .13;                       // inre änden ner = arg, upp = ledsen
+    const xIn = cx + inner * len / 2, xOut = cx - inner * len / 2;
+    ctx.globalAlpha = Math.min(1, p.bA);
+    ctx.strokeStyle = rgb(mixWhite(color, .25)); ctx.lineWidth = th; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(xOut, by - tiltY * .3);
+    ctx.quadraticCurveTo(cx, by - p.bC * bh * .14 + tiltY * .2, xIn, by + tiltY);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
 function render(t, now){
+  if (!(W > 2 && H > 2)){ resize(); if (!(W > 2 && H > 2)) return; }   // fönstret har ingen storlek än
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
 
@@ -423,13 +472,24 @@ function render(t, now){
   const oy = g.y * bh * .55 + Math.sin(t * 6) * cur.spin * bh * .4;
   const gap = bw * .85;
 
+  const fcx = W/2, fcy = H/2 - lay * H * .33 + bounceY;
+  // svagt sken bakom ögonen i känslans färg – andas lugnt
+  const amb = ctx.createRadialGradient(fcx + ox * .5, fcy + oy * .5, 0, fcx + ox * .5, fcy + oy * .5, bw * 2.8);
+  amb.addColorStop(0, rgb(cur.color, .085 * breathe * (1 - cur.L.lid * .6))); amb.addColorStop(1, rgb(cur.color, 0));
+  ctx.fillStyle = amb; ctx.fillRect(0, 0, W, H);
+  // var ögonen är (för att känna av petningar)
+  eyeBox.L = {x: fcx - gap + ox, y: fcy + oy, rx: bw * .6, ry: bh * .6};
+  eyeBox.R = {x: fcx + gap + ox, y: fcy + oy, rx: bw * .6, ry: bh * .6};
+  const sqz = s => { const d = (now - poke[s]) / 550; return d >= 0 && d < 1 ? Math.sin(Math.min(1, d * 2.2) * Math.PI / 2) * (1 - Math.max(0, d - .5) * 2) : 0; };
+  const glow = 1 + Math.sin(t * 1.7) * .08 + T * tv * .25;
   ctx.save();
-  ctx.translate(W/2, H/2 - lay * H * .33 + bounceY);
+  ctx.translate(fcx, fcy);
   ctx.rotate((cur.roll + g.x * 5 + Math.sin(t * 2.2) * cur.sway * 8) * Math.PI / 180);   // lutar huvudet åt det håll den tittar
   // ögat åt det håll den tittar blir lite större (perspektiv)
   const pv = .14;
-  drawEye(-gap + ox, oy, cur.L, -1, bw, bh, sx * (1 - g.x*pv), sy * (1 - g.x*pv*.6), t);
-  drawEye( gap + ox, oy, cur.R,  1, bw, bh, sx * (1 + g.x*pv), sy * (1 + g.x*pv*.6), t);
+  const lidAdd = squint + drowse;
+  drawEye(-gap + ox, oy, cur.L, -1, bw, bh, sx * (1 - g.x*pv), sy * (1 - g.x*pv*.6), t, {squeeze: sqz('L'), lidAdd, glow});
+  drawEye( gap + ox, oy, cur.R,  1, bw, bh, sx * (1 + g.x*pv), sy * (1 + g.x*pv*.6), t, {squeeze: sqz('R'), lidAdd, glow});
 
   if (cur.blush > .02){
     for (const s of [-1, 1]){
@@ -440,12 +500,83 @@ function render(t, now){
       ctx.beginPath(); ctx.ellipse(bx, by, r, r*.6, 0, 0, Math.PI*2); ctx.fill();
     }
   }
+  emitParticles(now, gap, ox, oy, bw, bh);
+  drawParticles(bw);
   ctx.restore();
 }
+
+// ============================================================
+//  SMÅ EFFEKTER: tårar, svett, Zzz, hjärtan, glitter, frågetecken
+// ============================================================
+let parts = [], nextEmit = {}, lastDtGlobal = .016;
+function emitEvery(key, now, ms){ if (now < (nextEmit[key] || 0)) return false; nextEmit[key] = now + ms * rand(.8, 1.25); return true; }
+function emitParticles(now, gap, ox, oy, bw, bh){
+  if (parts.length > 40 || visaOn) return;
+  const e = emotion, sleeping = baseEmotion === 'sömnig' && autoSlept;
+  if (e === 'ledsen' && emitEvery('tår', now, 1700)){
+    const s = Math.random() < .5 ? -1 : 1;
+    parts.push({k:'tår', x: s*gap + ox + s*bw*.18, y: oy + bh*.5, vx: 0, vy: bw*.15, life: 1.5});
+  }
+  if (e === 'rädd' && emitEvery('svett', now, 2400))
+    parts.push({k:'svett', x: gap + ox + bw*.68, y: oy - bh*.5, vx: 0, vy: bw*.12, life: 1.3});
+  if ((sleeping || e === 'sömnig') && emitEvery('zzz', now, 1300))
+    parts.push({k:'z', x: gap + ox + bw*.55, y: oy - bh*.55, vx: bw*.25, vy: -bw*.35, life: 2.4, s: rand(.8, 1.1)});
+  if (e === 'kär' && emitEvery('hjärta', now, 650))
+    parts.push({k:'hjärta', x: rand(-gap*1.6, gap*1.6) + ox, y: oy + rand(-bh*.2, bh*.5), vx: 0, vy: -bw*.4, life: 1.8, s: rand(.6, 1), ph: rand(0, 6)});
+  if (/^(förvånad|stolt)$/.test(e) && emitEvery('glitter', now, 260))
+    parts.push({k:'glitter', x: rand(-gap*1.9, gap*1.9) + ox, y: oy + rand(-bh*.9, bh*.6), vx: 0, vy: 0, life: .7, s: rand(.5, 1)});
+  if (e === 'förvirrad' && emitEvery('fråga', now, 2400))
+    parts.push({k:'?', x: gap + ox + bw*.35, y: oy - bh*.95, vx: 0, vy: -bw*.05, life: 2.3});
+}
+function updateParticles(dt){
+  for (const p of parts){
+    p.life -= dt; p.age = (p.age || 0) + dt;
+    if (p.k === 'tår') p.vy += 250 * dt * (p.vy > 0 ? 1 : 0) * .01 * 60;   // faller allt snabbare
+    p.x += p.vx * dt; p.y += p.vy * dt;
+  }
+  parts = parts.filter(p => p.life > 0);
+}
+function drawParticles(bw){
+  for (const p of parts){
+    const fadeIn = Math.min(1, p.age * 4), a = Math.min(fadeIn, p.life * 2, 1);
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(p.x, p.y);
+    if (p.k === 'tår' || p.k === 'svett'){
+      const s = bw * (p.k === 'tår' ? .085 : .075);
+      ctx.fillStyle = p.k === 'tår' ? 'rgba(170,215,255,.95)' : 'rgba(200,235,255,.9)';
+      ctx.beginPath(); ctx.moveTo(0, -s*1.6); ctx.quadraticCurveTo(s, -s*.2, s, s*.3);
+      ctx.arc(0, s*.3, s, 0, Math.PI); ctx.quadraticCurveTo(-s, -s*.2, 0, -s*1.6); ctx.fill();
+    } else if (p.k === 'z'){
+      ctx.fillStyle = rgb(mixWhite(cur.color, .3)); ctx.font = `700 ${bw * .28 * p.s * (1 + p.age * .25)}px ui-rounded, system-ui, sans-serif`;
+      ctx.fillText('Z', 0, 0);
+    } else if (p.k === 'hjärta'){
+      ctx.translate(Math.sin(p.age * 3 + p.ph) * bw * .08, 0);
+      ctx.fillStyle = 'rgba(255,120,175,.9)'; heartPath(ctx, bw * .22 * p.s); ctx.fill();
+    } else if (p.k === 'glitter'){
+      const s = bw * .09 * p.s * Math.sin(Math.min(1, p.age / .7) * Math.PI);
+      ctx.fillStyle = '#fff'; ctx.beginPath();
+      for (let i = 0; i < 8; i++){ const r = i % 2 ? s * .28 : s; const an = i * Math.PI / 4; ctx.lineTo(Math.cos(an) * r, Math.sin(an) * r); }
+      ctx.closePath(); ctx.fill();
+    } else if (p.k === '?'){
+      ctx.translate(0, Math.sin(p.age * 4) * bw * .04);
+      ctx.fillStyle = rgb(mixWhite(cur.color, .3)); ctx.font = `800 ${bw * .42}px ui-rounded, system-ui, sans-serif`;
+      ctx.fillText('?', 0, 0);
+    }
+    ctx.restore();
+  }
+}
+
+// ---------- Kroppsliga reaktioner (petning, kis, slumrande) ----------
+const eyeBox = {L: null, R: null};
+const poke = {L: -1e9, R: -1e9};
+let squint = 0, squintTarget = 0, drowse = 0, drowseStart = 0;
 
 // ---------- Huvudloop ----------
 let last = performance.now();
 function frame(now){
+  requestAnimationFrame(frame);                       // nästa bild bokas först – ett fel stoppar aldrig ögonen
+  try { step(now); } catch(e){ console.warn('Frank-Y:', e); }
+}
+function step(now){
   const dt = Math.min(.05, (now - last) / 1000); last = now;
   lerpObj(cur, target, 1 - Math.exp(-dt * target.speed));
   talkAmt += ((speaking ? 1 : 0) - talkAmt) * (1 - Math.exp(-dt * 10));
@@ -455,32 +586,165 @@ function frame(now){
   detect(now);
   updateGaze(now, dt);
   updateBlink(now);
+  updateParticles(dt);
+  squint += (squintTarget - squint) * (1 - Math.exp(-dt * 3));
+  updateDrowse(now);
+  lightTick(now);
+  boredTick(now);
   autoTick(now);
   idleTick(now);
   initiativTick(now);
   render(now / 1000, now);
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 // ---------- Beröring ----------
-let taps = [];
+// Dra med fingret = ögonen följer. Peta på ett öga = "aj!". Kittla (många tryck) = skratt.
+let taps = [], touch = null;
+const toGaze = (x, y) => [(x / W - .5) * 2, (y / H - .5) * 2];
 cv.addEventListener('pointerdown', e => {
   if (panel.classList.contains('open')){ panel.classList.remove('open'); return; }
   if (song && song.next){ song.next(); return; }        // sjung-med: tryck = nästa rad
+  lastActivity = performance.now(); keepAwake();
+  touch = {x: e.clientX, y: e.clientY, t: performance.now(), drag: false};
+  lookAt(...toGaze(e.clientX, e.clientY), 900);
+});
+cv.addEventListener('pointermove', e => {
+  if (!touch) return;
+  if (Math.hypot(e.clientX - touch.x, e.clientY - touch.y) > 14) touch.drag = true;
+  if (touch.drag){ lookAt(...toGaze(e.clientX, e.clientY), 700); lastActivity = performance.now(); }
+});
+const endTouch = e => {
+  if (!touch) return;
+  const tc = touch; touch = null;
+  if (tc.drag || performance.now() - tc.t > 500) return;     // det var en dragning, inte ett tryck
+  onTap(e);
+};
+cv.addEventListener('pointerup', endTouch);
+cv.addEventListener('pointercancel', () => { touch = null; });
+function hitEye(x, y){
+  for (const s of ['L', 'R']){
+    const b = eyeBox[s]; if (!b) continue;
+    if (((x - b.x) / b.rx) ** 2 + ((y - b.y) / b.ry) ** 2 <= 1) return s;
+  }
+  return null;
+}
+function onTap(e){
   const now = performance.now();
-  lastActivity = now; keepAwake();
-  lookAt((e.clientX / W - .5) * 2, (e.clientY / H - .5) * 2, 900);
   if (busy || listening || speaking || talking) return;   // stör inte mitt i ett samtal
-  taps = taps.filter(x => now - x < 2000); taps.push(now);
-  if (taps.length >= 6){ taps = []; play([['arg', 1800], ['ledsen', 1200]]); sound('arg', {extra: true}); return; } // kittla inte för mycket!
+  taps = taps.filter(x => now - x < 1500); taps.push(now);
+  if (taps.length >= 8){ taps = []; play([['yr', 2200]]); sound('yr', {extra: true}); return; }            // för mycket kittling = yr!
+  if (taps.length >= 4){ play([['skrattar', 2000]]); if (taps.length === 4) sound('skrattar', {extra: true}); return; }   // kittlas!
   if (baseEmotion === 'sömnig'){ wake(); return; }
   if (baseEmotion === 'blunda'){ setEmotion('neutral'); play([['förvånad', 400], ['glad', 1200]]); sound('förvånad', {soft: true, extra: true}); return; }
+  const eye = hitEye(e.clientX, e.clientY);
+  if (eye){
+    poke[eye] = now; sound('aj', {extra: true});
+    if (Math.random() < .4) setTimeout(() => { play([['skrattar', 1200]]); sound('skrattar', {soft: true, extra: true}); }, 450);
+    return;
+  }
   const r = Math.random();
   if (r < .45){ play([['förvånad', 450], ['glad', 1400]]); sound('förvånad', {soft: true, extra: true}); }
   else if (r < .75){ play([['glad', 1500]]); sound('glad', {soft: true, extra: true}); }
   else { play([['kär', 1800]]); sound('kär', {soft: true, extra: true}); }
-});
+}
+
+// ---------- Telefonen rör sig: luta, skaka, lyfta ----------
+let motionOn = false, motionAttached = false, gravS = null, gSign = 0, prevA = null, shakeHits = [], lastShake = 0, lastLift = 0, liftSince = 0;
+function screenAngle(){ return (screen.orientation && screen.orientation.angle) || window.orientation || 0; }
+function toScreen(x, y){   // enhetens axlar → skärmens (höger, ner)
+  const a = ((screenAngle() % 360) + 360) % 360;
+  if (a === 90) return [-y, -x];
+  if (a === 270) return [y, x];
+  if (a === 180) return [-x, y];
+  return [x, -y];
+}
+function onMotion(e){
+  const ag = e.accelerationIncludingGravity; if (!ag || ag.x == null) return;
+  const now = performance.now();
+  let [sx, sy] = toScreen(ag.x, ag.y);
+  if (!gSign && Math.abs(sy) > 5) gSign = sy > 0 ? 1 : -1;   // olika telefoner har olika tecken
+  sx *= gSign || 1; sy *= gSign || 1;
+  gravS = gravS ? {x: gravS.x * .9 + sx * .1, y: gravS.y * .9 + sy * .1, z: gravS.z * .9 + (ag.z || 0) * .1} : {x: sx, y: sy, z: ag.z || 0};
+  // luta: ögonen rullar mot den lägre sidan
+  tiltG.x = clamp(gravS.x / 7, -1, 1) * .45;
+  // skaka: många ryck på kort tid
+  if (prevA){
+    const jerk = Math.hypot(ag.x - prevA.x, ag.y - prevA.y, (ag.z || 0) - (prevA.z || 0));
+    if (jerk > 16) shakeHits.push(now);
+  }
+  prevA = {x: ag.x, y: ag.y, z: ag.z || 0};
+  shakeHits = shakeHits.filter(t => now - t < 900);
+  if (shakeHits.length >= 5 && now - lastShake > 4000 && !busy && !talking){
+    lastShake = now; shakeHits = [];
+    play([['yr', 2600]]); sound('yr');
+    return;
+  }
+  // lyfta: tydlig rörelse längs tyngdkraften en kort stund
+  const lin = e.acceleration;
+  if (lin && lin.x != null && gravS){
+    const gl = Math.hypot(gravS.x, gravS.y, gravS.z) || 1;
+    const [lx, ly] = toScreen(lin.x, lin.y);
+    const along = Math.abs((lx * gravS.x * (gSign || 1) + ly * gravS.y * (gSign || 1) + (lin.z || 0) * gravS.z) / gl);
+    if (along > 3.5){ if (!liftSince) liftSince = now; } else liftSince = 0;
+    if (liftSince && now - liftSince > 140 && now - lastLift > 3500 && now - lastShake > 2000 && !busy && !talking){
+      lastLift = now; liftSince = 0;
+      play([['förvånad', 1300], ['glad', 1200]]); sound('wii');
+    }
+  }
+}
+function attachMotion(){ if (!motionAttached){ addEventListener('devicemotion', onMotion); motionAttached = true; } }
+function detachMotion(){ removeEventListener('devicemotion', onMotion); motionAttached = false; tiltG.x = tiltG.y = 0; }
+async function enableMotion(){
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+      const s = await DeviceMotionEvent.requestPermission();   // iPhone frågar en gång
+      if (s !== 'granted'){ status('Rörelsesensorn nekades', 4000); return false; }
+    }
+    attachMotion(); return true;
+  } catch(e){ return false; }
+}
+
+// ---------- Omgivningen: ljus i rummet ----------
+const lumCanvas = document.createElement('canvas'); lumCanvas.width = 16; lumCanvas.height = 12;
+const lumCtx = lumCanvas.getContext('2d', {willReadFrequently: true});
+let lum = -1, nextLum = 0, darkSince = 0;
+function lightTick(now){
+  if (!camOn || now < nextLum || video.readyState < 2 || !video.videoWidth){ if (!camOn) squintTarget = 0; return; }
+  nextLum = now + 2000;
+  try {
+    lumCtx.drawImage(video, 0, 0, 16, 12);
+    const d = lumCtx.getImageData(0, 0, 16, 12).data; let s = 0;
+    for (let i = 0; i < d.length; i += 4) s += d[i] * .3 + d[i+1] * .59 + d[i+2] * .11;
+    const v = s / (d.length / 4); lum = lum < 0 ? v : lum * .6 + v * .4;
+  } catch(e){ return; }
+  squintTarget = lum > 215 ? .2 : 0;                           // starkt ljus → kisar
+  if (lum >= 0 && lum < 26){                                   // mörkt → sömnig
+    if (!darkSince) darkSince = now;
+    if (now - darkSince > 8000 && autoMode && baseEmotion === 'neutral' && !busy && !talking && !convo && !tempActive){
+      baseEmotion = 'sömnig'; autoSlept = true; apply('sömnig'); sound('gäsp', {extra: true});
+    }
+  } else darkSince = 0;
+}
+
+// ---------- Uttråkad när ingen är där: tittar på "klockan", slumrar till ----------
+let nextBored = performance.now() + 15000;
+function boredTick(now){
+  if (now < nextBored) return;
+  nextBored = now + rand(15000, 30000);
+  if (face.visible || busy || talking || listening || convo || tempActive || visaOn) return;
+  if (baseEmotion !== 'neutral' || now - lastActivity < 12000) return;
+  const r = Math.random();
+  if (r < .35){ lookAt(.85, -.8, 1600); if (Math.random() < .5) sound('fundera', {quiet: true, extra: true}); }
+  else if (r < .7){ drowseStart = now; }                                   // slumrar till…
+  else { play([['uttråkad', 2500]]); if (Math.random() < .5) sound('uttråkad', {quiet: true, extra: true}); }
+}
+function updateDrowse(now){
+  if (!drowseStart){ drowse = 0; return; }
+  const p = (now - drowseStart) / 2600;
+  if (p < 1){ drowse = p * p * .6; gT.y = Math.max(gT.y, p * .5); }
+  else { drowseStart = 0; drowse = 0; changeAt = now; startBlink('quick'); sound('förvånad', {quiet: true, extra: true}); }  // …och vaknar med ett ryck
+}
 
 // ---------- Håll skärmen tänd ----------
 let wakeLock = null;
@@ -647,6 +911,8 @@ const SOUNDS = {
   // lyssnarljud – väldigt tysta, medan barnen pratar
   mm:       () => { chirp([[0,j(520)],[.12,j(560)],[.22,520]], {vol:.045, vib:.01, vibHz:5}); },
   oj:       () => { chirp([[0,j(600)],[.12,j(1100)]], {vol:.05}); },
+  aj:       () => { chirp([[0,j(1000)],[.05,1300],[.2,j(600)]], {vol:.12, formant:1200, q:1}); },
+  wii:      () => { chirp([[0,500],[.5,j(1800)],[.62,1650]], {type:'triangle', vol:.12, vib:.02, vibHz:7}); },
 };
 let smaljud = store.get('sfx', true);   // kan stängas av i ⚙-menyn
 function sound(n, opts = {}){
@@ -834,6 +1100,9 @@ function onMic(c, d){
   const thr = Math.max(.012, c.noise * 2.5);
 
   if (c.phase === 'listen'){
+    if (rms > Math.max(c.noise * 14, .22) && now - (c.lastStartle || 0) > 6000 && !tempActive){   // plötsligt högt ljud
+      c.lastStartle = now; play([['förvånad', 900]]); changeAt = now; sound('oj', {extra: true});
+    }
     if (rms > thr){ beginSpeech(c, now); }
     else if (now - c.lastActive > CONVO.endAfterMs) endConvo(true);
   } else if (c.phase === 'speech'){
@@ -1465,6 +1734,18 @@ addBtn('💬 Skriv', askText);
 addBtn('🔊 Testa rösten', () => { if (!talking) speakParts([{'säg': 'Hej! Jag heter Frank-Y. Vad heter du?', 'känsla': 'glad'}]); });
 addBtn('👨‍👩‍👦 Familj', openFamilj);
 addBtn('🧠 Minne', openMinne);
+let motionPref = store.get('motion', false);
+const motionBtn = addBtn('📱 Rörelse', async () => {
+  if (motionOn){ motionOn = false; detachMotion(); }
+  else motionOn = await enableMotion();
+  store.set('motion', motionOn); motionBtn.classList.toggle('on', motionOn);
+  if (motionOn){ status('Skaka, luta eller lyft mig! 📱', 4000); }
+});
+// Var rörelse på förra gången: be om lov igen vid första tryckningen (iPhone kräver ett tryck)
+if (motionPref) document.addEventListener('click', async function once(){
+  document.removeEventListener('click', once, true);
+  motionOn = await enableMotion(); motionBtn.classList.toggle('on', motionOn);
+}, true);
 const initBtn = addBtn('💬 Tar initiativ', () => { initiativOn = !initiativOn; store.set('init', initiativOn); initBtn.classList.toggle('on', initiativOn); });
 initBtn.classList.toggle('on', initiativOn);
 addBtn('🧹 Glöm samtalet', () => { history = []; status('Samtalet är glömt'); });
