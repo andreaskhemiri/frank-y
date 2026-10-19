@@ -25,6 +25,23 @@
   #mic.busy{opacity:.35}
   #mic.convo{background:rgba(90,216,255,.18);box-shadow:0 0 0 3px rgba(90,216,255,.35)}
   #panel.open + #mic{display:none}
+  #visa{position:fixed;left:0;right:0;top:35%;bottom:calc(max(18px,env(safe-area-inset-bottom)) + 80px);display:flex;align-items:center;justify-content:center;
+        opacity:0;transform:translateY(24px);transition:opacity .45s,transform .45s;pointer-events:none;z-index:1;
+        color:#fff;font-family:ui-rounded,"SF Pro Rounded",system-ui,-apple-system,sans-serif;font-weight:700;text-align:center}
+  #visa.on{opacity:1;transform:none}
+  #visa .inner{display:flex;flex-direction:column;align-items:center;gap:1.6vh;transform-origin:center}
+  #visa .bild{font-size:min(17vh,13vw);line-height:1.1;letter-spacing:.05em}
+  #visa .text{font-size:min(11vh,8vw);line-height:1.1;color:var(--vc,#5ad8ff);text-shadow:0 0 18px rgba(90,216,255,.35)}
+  #visa .stava{display:flex;gap:1.2vh}
+  #visa .stava span{display:inline-flex;align-items:center;justify-content:center;width:min(11vh,9vw);height:min(13vh,11vw);border-radius:14px;
+        background:rgba(90,216,255,.16);font-size:min(9vh,7vw);opacity:0;transform:scale(.4);transition:opacity .3s,transform .3s}
+  #visa .stava span.in{opacity:1;transform:none}
+  #visa .val{display:flex;gap:2vh;flex-wrap:wrap;justify-content:center}
+  #visa .val button{pointer-events:auto;border:0;border-radius:18px;min-width:min(16vh,18vw);padding:1.4vh 2.4vh;font:inherit;font-size:min(7vh,6vw);
+        background:#23324a;color:#fff;box-shadow:0 0 0 2px rgba(90,216,255,.35);transition:background .2s,transform .2s}
+  #visa .val button:active{transform:scale(.94)}
+  #visa .val button.ratt{background:#1f9d57;box-shadow:0 0 0 3px #6ff0a8}
+  #visa .val button.fel{background:#7a2e3a;opacity:.6}
 </style>
 </head>
 <body>
@@ -32,6 +49,7 @@
 <video id="v" playsinline muted autoplay></video>
 <div id="status"></div>
 <button id="gear" aria-label="Inställningar">⚙</button>
+<div id="visa"><div class="inner"></div></div>
 <div id="panel"></div>
 <button id="mic" aria-label="Prata med Frank-Y">🎤</button>
 
@@ -366,7 +384,7 @@ function render(t, now){
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
 
-  const bw = Math.min(W * .25, H * .42), bh = bw * 1.15;
+  const bw = Math.min(W * .25, H * .42) * (1 - lay * .56), bh = bw * 1.15;
   const breathe = 1 + Math.sin(t * 1.7) * .012;
   const age = (now - changeAt) / 1000;
   const sq = Math.exp(-age * 6) * Math.sin(age * 20) * .1;          // studs vid nytt uttryck
@@ -384,7 +402,7 @@ function render(t, now){
   const gap = bw * .85;
 
   ctx.save();
-  ctx.translate(W/2, H/2 + bounceY);
+  ctx.translate(W/2, H/2 - lay * H * .33 + bounceY);
   ctx.rotate((cur.roll + g.x * 5 + Math.sin(t * 2.2) * cur.sway * 8) * Math.PI / 180);   // lutar huvudet åt det håll den tittar
   // ögat åt det håll den tittar blir lite större (perspektiv)
   const pv = .14;
@@ -409,6 +427,8 @@ function frame(now){
   const dt = Math.min(.05, (now - last) / 1000); last = now;
   lerpObj(cur, target, 1 - Math.exp(-dt * target.speed));
   talkAmt += ((speaking ? 1 : 0) - talkAmt) * (1 - Math.exp(-dt * 10));
+  lay += ((visaOn ? 1 : 0) - lay) * (1 - Math.exp(-dt * 6));
+  if (visaOn && now - visaShownAt > 90000 && !talking && !busy) hideVisa();   // försvinner efter en stund utan aktivitet
   updateVoiceLevel();
   detect(now);
   updateGaze(now, dt);
@@ -801,6 +821,7 @@ function convoBackToListening(){
 function endConvo(timeout, quiet){
   const c = convo; convo = null;
   if (!c) return;
+  if (visaOn) hideVisa();
   try { c.proc.onaudioprocess = null; c.src.disconnect(); c.proc.disconnect(); c.mute.disconnect(); } catch(_){}
   c.stream.getTracks().forEach(t => t.stop());       // här släpps mikrofonen – pricken släcks
   if (camOn && video.paused) video.play().catch(() => {});
@@ -972,13 +993,91 @@ async function fetchVoice(text){
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // Pratar del för del – ansiktet byter uttryck när varje del börjar
+// ============================================================
+//  SKÄRMEN – visar tal, emojis, ord och svarsknappar under ögonen
+//  Bilder får BARA vara emojis (filtreras här i telefonen).
+// ============================================================
+let lay = 0, visaOn = false, visaShownAt = 0, currentVisa = null;
+const visaEl = document.getElementById('visa'), visaInner = visaEl.querySelector('.inner');
+const BLOCKED = /[\u{1F346}\u{1F351}\u{1F4A6}\u{1F595}\u{1F51E}\u{1F48A}\u{1F489}\u{1FA78}\u{1F52A}\u{1F5E1}\u{26B0}\u{26B1}\u{1F480}\u{2620}\u{1F52B}\u{1F4A3}\u{1F37A}\u{1F37B}\u{1F377}\u{1F378}\u{1F379}\u{1F376}\u{1F6AC}\u{1F48B}\u{1F459}]/u;
+function graphemes(s){
+  try { return [...new Intl.Segmenter('sv', {granularity: 'grapheme'}).segment(s)].map(x => x.segment); }
+  catch(e){ return Array.from(s); }
+}
+function safeBild(s){
+  // behåll bara emojis, mellanslag och räknetecken
+  return graphemes(String(s || '')).filter(g =>
+    /^[\s+\-−=?×·:]$/.test(g) || (/\p{Extended_Pictographic}/u.test(g) && !BLOCKED.test(g))
+  ).join('').replace(/\s+/g, ' ').trim().slice(0, 120);
+}
+const safeText = s => String(s || '').replace(/[<>{}\[\]\\]/g, '').trim().slice(0, 40);
+function fitVisa(){
+  visaInner.style.transform = '';
+  const s = Math.min(1, (visaEl.clientHeight - 8) / Math.max(1, visaInner.scrollHeight), (visaEl.clientWidth - 24) / Math.max(1, visaInner.scrollWidth));
+  visaInner.style.transform = `scale(${s.toFixed(3)})`;
+}
+addEventListener('resize', () => { if (visaOn) fitVisa(); });
+function showVisa(v){
+  if (!v) return;
+  currentVisa = v; visaInner.innerHTML = '';
+  const add = (cls, txt) => { const d = document.createElement('div'); d.className = cls; if (txt != null) d.textContent = txt; visaInner.appendChild(d); return d; };
+  const bild = safeBild(v.bild);
+  if (bild){
+    const n = graphemes(bild).filter(g => g.trim()).length;
+    const el = add('bild', bild);
+    if (n > 6) el.style.fontSize = `min(${Math.max(7, 17 - (n - 6) * 1.1)}vh, ${Math.max(5, 13 - (n - 6) * .8)}vw)`;
+  }
+  const text = safeText(v.text); if (text) add('text', text);
+  const stava = safeText(v.stava).replace(/\s+/g, '');
+  if (stava){
+    const row = add('stava');
+    graphemes(stava).slice(0, 14).forEach((ch, i) => {
+      const sp = document.createElement('span'); sp.textContent = ch.toUpperCase(); row.appendChild(sp);
+      setTimeout(() => { sp.classList.add('in'); if (smaljud) { pm = 1 + i * .06; tone(700, 900, .05, 0, 'sine', .08); pm = 1; } }, 350 + i * 420);
+    });
+  }
+  if (Array.isArray(v.val) && v.val.length >= 2){
+    const row = add('val');
+    v.val.slice(0, 4).forEach(opt => {
+      const b = document.createElement('button'); b.textContent = safeText(opt);
+      b.addEventListener('click', e => { e.stopPropagation(); answer(b, String(opt)); });
+      row.appendChild(b);
+    });
+  }
+  if (!visaInner.children.length) return;
+  const c = cur.color; visaEl.style.setProperty('--vc', `rgb(${c[0]|0},${c[1]|0},${c[2]|0})`);
+  visaOn = true; visaShownAt = performance.now();
+  visaEl.classList.add('on');
+  requestAnimationFrame(fitVisa);
+}
+function hideVisa(){
+  visaOn = false; currentVisa = null;
+  visaEl.classList.remove('on');
+  setTimeout(() => { if (!visaOn) visaInner.innerHTML = ''; }, 500);
+}
+// Ett barn trycker på ett svar
+function answer(btn, opt){
+  if (busy) return;
+  visaShownAt = performance.now(); lastActivity = performance.now();
+  if (talking) stopTalking();
+  const rätt = currentVisa && currentVisa['rätt'];
+  btn.parentElement.querySelectorAll('button').forEach(b => b.disabled = true);
+  if (rätt != null){
+    if (opt === rätt){ btn.classList.add('ratt'); sound('stolt'); }
+    else { btn.classList.add('fel'); sound('förvirrad', {soft: true}); }
+  }
+  setTimeout(() => think('Jag svarar: ' + opt), talking ? 400 : 250);
+}
+
 async function speakParts(delar){
   talking = true; interrupted = false;
   convoTalking(true);
   const voices = delar.map(d => fetchVoice(clean(d['säg'])));   // hämta alla direkt, första spelas när den är klar
   let k = 'neutral';
+  if (!delar.some(d => d.visa)) { if (visaOn) hideVisa(); }    // vanligt prat → bara ögon
   for (let i = 0; i < delar.length && !interrupted; i++){
     const d = delar[i]; const nk = norm(d['känsla']);
+    if (d.visa) showVisa(d.visa);
     if (nk !== emotion || i === 0){
       setEmotion(nk);
       if (i === 0) sound(nk);
@@ -1038,7 +1137,7 @@ const bargeBtn = addBtn('✋ Avbryt med rösten', () => { bargeOn = !bargeOn; st
 bargeBtn.classList.toggle('on', bargeOn);
 
 // ---------- Öppet gränssnitt ----------
-window.robot = { setEmotion, play, lookAt, speak, think, listen, sound,
+window.robot = { setEmotion, play, lookAt, speak, think, listen, sound, showVisa, hideVisa,
   emotions: Object.keys(EXPR), get emotion(){ return emotion; } };
 </script>
 </body>
