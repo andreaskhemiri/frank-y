@@ -295,6 +295,7 @@ function detect(now){
 let lastActivity = performance.now(), autoSlept = false;
 function onFaceAppear(now){
   const away = now - (face.lostAt || 0);
+  if (away > INITIATIV.greetAfterMs || firstSeenToday()) pendingArrival = now;   // värt att hälsa ordentligt
   lastActivity = now;
   if (!autoMode || tempActive) return;
   if (autoSlept && baseEmotion === 'sömnig'){ wake(); }
@@ -450,6 +451,7 @@ function frame(now){
   updateBlink(now);
   autoTick(now);
   idleTick(now);
+  initiativTick(now);
   render(now / 1000, now);
   requestAnimationFrame(frame);
 }
@@ -816,6 +818,7 @@ function onMic(c, d){
   // 'wait' (han tänker) och 'cool' (han har just pratat klart): lyssna inte
 }
 function beginSpeech(c, now){
+  c.gotSpeech = true;
   c.phase = 'speech'; c.chunks = c.pre.slice(); c.voiceStart = c.lastVoice = now;
   micBtn.classList.add('on'); lastActivity = now;
   if (!talking) setEmotion('lyssnar');
@@ -843,7 +846,11 @@ function endConvo(timeout, quiet){
   listening = false;
   micBtn.classList.remove('on', 'convo'); micBtn.style.transform = '';
   if (quiet) return;
-  if (!talking && !busy){ setEmotion('neutral'); if (timeout) sound('klart', {soft: true}); }
+  if (!talking && !busy){
+    setEmotion('neutral');
+    if (timeout && c.fromInit && !c.gotSpeech){ play([['blyg', 2200]]); }   // ingen svarade – lite blyg
+    else if (timeout) sound('klart', {soft: true});
+  }
 }
 
 function toWav16k(chunks, rate){
@@ -1010,8 +1017,62 @@ function openMinne(){
   });
 }
 
+// ============================================================
+//  INITIATIV – Frank-Y börjar prata själv ibland
+// ============================================================
+const INITIATIV = {
+  gapMs: 15 * 60000,       // högst en gång var 15:e minut
+  arrivalGapMs: 5 * 60000, // hälsning när någon kommer: högst var 5:e minut
+  greetAfterMs: 10 * 60000,// borta så här länge = hälsa när personen kommer tillbaka
+  quietMs: 3 * 60000,      // så här länge tyst med någon i närheten innan han säger något
+  tystFran: '19:30',       // tysta tider – då tar han aldrig initiativ
+  tystTill: '07:00',
+};
+let initiativOn = store.get('init', true);
+let lastInitiative = 0, pendingArrival = 0, lastInitCheck = 0;
+function isQuietHours(){
+  const d = new Date(), m = d.getHours() * 60 + d.getMinutes();
+  const p = s => { const [a, b] = s.split(':').map(Number); return a * 60 + b; };
+  const f = p(INITIATIV.tystFran), t = p(INITIATIV.tystTill);
+  return f > t ? (m >= f || m < t) : (m >= f && m < t);
+}
+function todayKey(){ const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
+function firstSeenToday(){ return store.get('lastday', '') !== todayKey(); }
+function initiativTick(now){
+  if (now - lastInitCheck < 1000) return;
+  lastInitCheck = now;
+  if (pendingArrival && now - pendingArrival > 60000) pendingArrival = 0;          // för gammal hälsning
+  if (!initiativOn || !camOn || !face.visible) return;
+  if (busy || talking || listening || convo || tempActive || document.hidden) return;
+  if (!ac || ac.state !== 'running') return;                                       // iPhone: någon måste ha rört skärmen först
+  if (baseEmotion === 'blunda' || panel.classList.contains('open') || sheet.classList.contains('open')) return;
+  if (!serverUrl || !password || isQuietHours()) return;
+  const quietFor = now - Math.max(lastActivity, lastTalk, lastInitiative);
+  let händelse = '';
+  if (pendingArrival && now - pendingArrival > 1500 && now - lastInitiative > INITIATIV.arrivalGapMs){
+    händelse = firstSeenToday()
+      ? 'Det är första gången du ser någon idag. Hälsa glatt på morgonen/dagen.'
+      : 'Någon kom precis fram till dig efter en stund borta. Hälsa och bjud in till prat.';
+    pendingArrival = 0;
+  } else if (now - lastInitiative > INITIATIV.gapMs && quietFor > INITIATIV.quietMs){
+    händelse = 'Någon är nära dig men det har varit tyst en stund (de kanske pysslar eller leker). Säg något kort och nyfiket som bjuder in till prat, utan att störa för mycket.';
+  }
+  if (!händelse) return;
+  lastInitiative = now;
+  store.set('lastday', todayKey());
+  think('[Händelse: ' + händelse + ']', {thenListen: true});
+}
+// Startar samtalsläget utan knapptryck (efter att han själv tagit initiativ)
+async function autoListen(){
+  if (convo || busy || talking || listening) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  listening = true; micBtn.classList.add('convo');
+  try { await startConvo(); if (convo){ convo.fromInit = true; setEmotion('lyssnar'); } }
+  catch(e){ listening = false; micBtn.classList.remove('convo'); }   // går inte utan tryck – då får barnen trycka själva
+}
+
 // ---------- Tänk (fråga hjärnan) ----------
-async function think(text){
+async function think(text, opts = {}){
   text = String(text || '').trim();
   if (!text || busy) return;
   if (!serverUrl || !password){ status('Fyll i server-adress och lösenord under ⚙'); panel.classList.add('open'); return; }
@@ -1045,10 +1106,11 @@ async function think(text){
   busy = false; micBtn.classList.remove('busy');
   const k = await speakParts(delar);
   lastTalk = performance.now(); lastActivity = performance.now();
+  if (opts.thenListen && !convo) autoListen();   // han tog initiativ – lyssna efter svar
   if (convo && HEJDA.test(text)){ setTimeout(() => endConvo(false), 600); }
   const hold = k === 'blunda' ? 20000 : (k === 'yr' || k === 'skrattar') ? 3500 : convo ? 1800 : 2500;   // blunda = håll ögonen stängda en stund
   setTimeout(() => {
-    if (busy || talking || baseEmotion !== k) return;
+    if (busy || talking || tempActive || baseEmotion !== k) return;
     if (convo){ if (convo.phase === 'listen' || convo.phase === 'cool') setEmotion('lyssnar'); }
     else if (!listening) setEmotion('neutral');
   }, hold);
@@ -1213,6 +1275,8 @@ addBtn('💬 Skriv', askText);
 addBtn('🔊 Testa rösten', () => { if (!talking) speakParts([{'säg': 'Hej! Jag heter Frank-Y. Vad heter du?', 'känsla': 'glad'}]); });
 addBtn('👨‍👩‍👦 Familj', openFamilj);
 addBtn('🧠 Minne', openMinne);
+const initBtn = addBtn('💬 Tar initiativ', () => { initiativOn = !initiativOn; store.set('init', initiativOn); initBtn.classList.toggle('on', initiativOn); });
+initBtn.classList.toggle('on', initiativOn);
 addBtn('🧹 Glöm samtalet', () => { history = []; status('Samtalet är glömt'); });
 const sfxBtn = addBtn('🎵 Småljud', () => { smaljud = !smaljud; store.set('sfx', smaljud); sfxBtn.classList.toggle('on', smaljud); if (smaljud) sound('glad'); });
 sfxBtn.classList.toggle('on', smaljud);
