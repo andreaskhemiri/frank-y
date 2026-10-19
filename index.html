@@ -1078,6 +1078,8 @@ async function speakParts(delar){
   for (let i = 0; i < delar.length && !interrupted; i++){
     const d = delar[i]; const nk = norm(d['känsla']);
     if (d.visa) showVisa(d.visa);
+    // Skyddsnät: en ny räknefråga utan ny bild → ta bort den gamla hellre än att visa fel
+    else if (visaOn && /\?\s*$/.test(d['säg']) && /\d|\b(plus|minus|gånger)\b/i.test(d['säg'])) hideVisa();
     if (nk !== emotion || i === 0){
       setEmotion(nk);
       if (i === 0) sound(nk);
