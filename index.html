@@ -981,7 +981,12 @@ function speak(text){
 
 // ---------- Robotröst: spela Azure-ljudet med robotklang ----------
 // Ändra fritt: ring = metallisk robotton, metal = plåtigt eko, speed = tempo/tonhöjd
-const ROBOT_FX = { ring: .35, ringHz: 48, metal: .3, speed: 1.04 };
+// rost = sträv, lite trasig högtalare (0 = ingen, .6 = mycket) · knaster = små sprak i rösten
+const ROBOT_FX = { ring: .35, ringHz: 48, metal: .3, speed: 1.06, rost: .35, knaster: .25 };
+const rostCurve = (() => { const n = 1024, c = new Float32Array(n), k = 18;
+  for (let i = 0; i < n; i++){ const x = i / (n - 1) * 2 - 1; c[i] = (1 + k) * x / (1 + k * Math.abs(x)); } return c; })();
+const absCurve = (() => { const c = new Float32Array(256); for (let i = 0; i < 256; i++) c[i] = Math.abs(i / 255 * 2 - 1); return c; })();
+let crackleBuf = null;
 let voiceLevel = -1, analyser = null, levelBuf = null;
 function updateVoiceLevel(){
   if (!analyser || !speaking){ voiceLevel = -1; return; }
@@ -998,6 +1003,7 @@ async function playRobotVoice(arrayBuf){
   if (interrupted) return;
   return new Promise(res => {
     const src = a.createBufferSource(); src.buffer = audioBuf; src.playbackRate.value = ROBOT_FX.speed;
+    const extraStops = [];
     const out = a.createGain(); out.gain.value = 1.1;
     const comp = a.createDynamicsCompressor();
     const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 140;
@@ -1014,11 +1020,33 @@ async function playRobotVoice(arrayBuf){
     const fb = a.createGain(); fb.gain.value = .45;
     const wet = a.createGain(); wet.gain.value = ROBOT_FX.metal;
     src.connect(dl); dl.connect(fb).connect(dl); dl.connect(wet).connect(hp);
+    // rost: sträv distorsion i mellanregistret, parallellt med rösten
+    if (ROBOT_FX.rost > 0){
+      const sh = a.createWaveShaper(); sh.curve = rostCurve; sh.oversample = '2x';
+      const pre = a.createGain(); pre.gain.value = 2.5;
+      const bp = a.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1900; bp.Q.value = .9;
+      const rg = a.createGain(); rg.gain.value = ROBOT_FX.rost * .35;
+      src.connect(pre).connect(sh).connect(bp).connect(rg).connect(hp);
+    }
+    // knaster: små sprak som bara hörs när han pratar (följer röstens styrka)
+    if (ROBOT_FX.knaster > 0){
+      if (!crackleBuf){
+        crackleBuf = a.createBuffer(1, a.sampleRate, a.sampleRate); const d = crackleBuf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = Math.random() < .004 ? (Math.random() * 2 - 1) : (Math.random() * 2 - 1) * .02;
+      }
+      const nz = a.createBufferSource(); nz.buffer = crackleBuf; nz.loop = true;
+      const vca = a.createGain(); vca.gain.value = 0;
+      const env = a.createWaveShaper(); env.curve = absCurve;                 // röstens styrka…
+      const lp = a.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 25;
+      const amt = a.createGain(); amt.gain.value = ROBOT_FX.knaster * 1.6;
+      src.connect(env).connect(lp).connect(amt).connect(vca.gain);              // …styr hur mycket det knastrar
+      nz.connect(vca).connect(hp); nz.start(); extraStops.push(nz);
+    }
     hp.connect(comp).connect(out).connect(a.destination);
     analyser = a.createAnalyser(); analyser.fftSize = 512; levelBuf = new Uint8Array(analyser.fftSize);
     out.connect(analyser);
     let fin = false;
-    const done = () => { if (fin) return; fin = true; speaking = false; currentSrc = null; try { osc.stop(); } catch(_){} res(); };
+    const done = () => { if (fin) return; fin = true; speaking = false; currentSrc = null; try { osc.stop(); } catch(_){} extraStops.forEach(n => { try { n.stop(); } catch(_){} }); res(); };
     src.onended = done; currentSrc = src;
     speaking = true; osc.start(); src.start();
     setTimeout(done, audioBuf.duration / ROBOT_FX.speed * 1000 + 1500);
