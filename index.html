@@ -626,12 +626,14 @@ async function playRobotVoice(b64){
 // iPhone kräver att rösten "låses upp" av en riktig tryckning (pointerup/click,
 // inte pointerdown). Första tryckningen får Frank-Y att säga "Hej!".
 let unlocked = false, unlockPromise = null;
-function unlockVoice(){
+function unlockVoice(e){
   audio(); keepAwake();
   if (unlocked || !('speechSynthesis' in window)) return;
   unlocked = true;
+  const onMic = e && e.target && e.target.id === 'mic';
   unlockPromise = new Promise(r => {
-    const u = new SpeechSynthesisUtterance('Hej!');
+    const u = new SpeechSynthesisUtterance(onMic ? ' ' : 'Hej!');
+    if (onMic) u.volume = 0;
     u.lang = 'sv-SE'; if (svVoice) u.voice = svVoice;
     u.pitch = VOICE.pitch; u.rate = VOICE.rate;
     let d = false; const f = () => { if (d) return; d = true; speaking = false; unlockPromise = null; r(); };
@@ -647,9 +649,9 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 // ---------- Lyssna (tal till text) ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-async function listen(){
+function listen(){
   if (busy || listening) return;
-  if (unlockPromise) await unlockPromise;   // låt "Hej!" pratas klart först
+  // Mikrofonen måste startas direkt i tryckningen, annars vägrar iPhone
   if (!SR){ status('Taligenkänning saknas här – skriv istället'); askText(); return; }
   if ('speechSynthesis' in window) speechSynthesis.cancel();
   const rec = new SR();
@@ -658,7 +660,9 @@ async function listen(){
   let heard = '';
   rec.onresult = e => { got = true; heard = e.results[0][0].transcript; try { rec.stop(); } catch(_){} };
   rec.onerror = e => {
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') status('Mikrofonen är blockerad – öppna i Safari');
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') status('Mikrofonen är blockerad – tillåt den under Inställningar → Safari → Mikrofon', 9000);
+    else if (e.error === 'no-speech') status('Jag hörde inget – prova igen', 4000);
+    else if (e.error !== 'aborted') status('Mikrofonfel: ' + e.error, 6000);
   };
   rec.onend = () => {
     listening = false; micBtn.classList.remove('on');
@@ -668,7 +672,8 @@ async function listen(){
   };
   listening = true; lastActivity = performance.now();
   micBtn.classList.add('on'); sound('lyssnar'); setEmotion('lyssnar');
-  setTimeout(() => { try { rec.start(); } catch(e){ listening = false; micBtn.classList.remove('on'); } }, 150);
+  try { rec.start(); }
+  catch(e){ listening = false; micBtn.classList.remove('on'); status('Mikrofonen startade inte: ' + e.message, 6000); }
 }
 function askText(){
   const t = window.prompt('Skriv till Frank-Y:');
