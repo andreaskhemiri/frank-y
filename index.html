@@ -1953,6 +1953,7 @@ async function speakParts(delar){
 micBtn.addEventListener('click', e => { e.stopPropagation(); listen(); });
 
 // ---------- Inställningar för hjärnan i ⚙-menyn ----------
+const APP_VERSION = 13;   // syns längst ner i ⚙-menyn – så vet du att telefonen har senaste koden
 panel.appendChild(Object.assign(document.createElement('div'), {className:'sep'}));
 function mkInput(ph, val, type, onChange){
   const i = document.createElement('input');
@@ -1975,6 +1976,10 @@ addBtn('🧪 Testa hjärnan', async () => {
 addBtn('💬 Skriv', askText);
 addBtn('🔊 Testa rösten', () => { if (!talking) speakParts([{'säg': 'Hej! Jag heter Frank-Y. Vad heter du?', 'känsla': 'glad'}]); });
 addBtn('👨‍👩‍👦 Familj', openFamilj);
+panel.appendChild(Object.assign(document.createElement('div'), {className:'sep'}));
+const verEl = Object.assign(document.createElement('div'), {textContent: 'Frank-Y v' + APP_VERSION});
+verEl.style.cssText = 'color:#778;font-size:12px;width:100%;text-align:center';
+panel.appendChild(verEl);
 addBtn('🧠 Minne', openMinne);
 let motionPref = store.get('motion', false);
 const motionBtn = addBtn('📱 Rörelse', async () => {
