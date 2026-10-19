@@ -1157,13 +1157,17 @@ let voiceFailed = false;
 function speak(text){
   return new Promise(res => {
     text = clean(text);
-    if (!text || !('speechSynthesis' in window)){ res(); return; }
+    if (!text || !/[\p{L}\p{N}]/u.test(text) || !('speechSynthesis' in window)){ res(); return; }   // bara skiljetecken → säg inget
+    const arabic = /[\u0600-\u06FF]/.test(text);
+    const arVoice = arabic ? speechSynthesis.getVoices().find(v => /^ar/i.test(v.lang)) : null;
+    if (arabic && !arVoice){ status('Farfars röst svarar inte – kolla att hjärnan är version 13', 6000); res(); return; }
     let finished = false, started = false;
     const done = () => { if (finished) return; finished = true; speaking = false; res(); };
     const go = () => {
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = costume ? 'ar-TN' : 'sv-SE';
-      if (svVoice && !voiceFailed && !costume) u.voice = svVoice;
+      u.lang = arabic ? (arVoice.lang || 'ar') : 'sv-SE';
+      if (arabic) u.voice = arVoice;
+      else if (svVoice && !voiceFailed) u.voice = svVoice;
       u.pitch = VOICE.pitch; u.rate = VOICE.rate; u.volume = 1;
       u.onstart = () => { started = true; speaking = true; };
       u.onend = done;
@@ -1644,7 +1648,7 @@ async function think(text, opts = {}){
   if (!text || busy) return;
   if (!serverUrl || !password){ status('Fyll i server-adress och lösenord under ⚙'); panel.classList.add('open'); return; }
   busy = true; micBtn.classList.add('busy'); lastActivity = performance.now();
-  if (/prata (som|med) farfar|farfars röst/i.test(text)) setCostume('farfar');            // förvandlingen startar direkt
+  if (/(prata|snacka|låta|tala)\s+(\S+\s+)?(som|med|likt)\s+(en\s+)?farfar|farfars röst|bli farfar/i.test(text)) setCostume('farfar');            // förvandlingen startar direkt
   else if (costume && /(prata|snacka|tala) svenska/i.test(text)) setCostume(null);
   if (opts.react){
     // visa en känsla direkt, tänk sen
